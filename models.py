@@ -1,176 +1,176 @@
 from typing import List
 import numpy as np
-import torch
 from torch import nn
-import torch.nn.functional as F
+from torch.nn import functional as F
+import torch
+import torch.optim as optim
+import copy
+
 
 def build_mlp(layers_dims: List[int]):
     layers = []
     for i in range(len(layers_dims) - 2):
         layers.append(nn.Linear(layers_dims[i], layers_dims[i + 1]))
         layers.append(nn.BatchNorm1d(layers_dims[i + 1]))
-        layers.append(nn.ReLU(inplace=True))
+        layers.append(nn.ReLU(True))
     layers.append(nn.Linear(layers_dims[-2], layers_dims[-1]))
     return nn.Sequential(*layers)
 
 
-class TransformerEncoder(nn.Module):
-    def __init__(self, dim, num_heads, mlp_ratio=4.0, dropout=0.0):
+class Prober(torch.nn.Module):
+    def __init__(
+        self,
+        embedding: int,
+        arch: str,
+        output_shape: List[int],
+    ):
         super().__init__()
-        self.norm1 = nn.LayerNorm(dim)
-        self.attn = nn.MultiheadAttention(dim, num_heads, dropout=dropout, batch_first=True)
-        self.norm2 = nn.LayerNorm(dim)
-        self.mlp = nn.Sequential(
-            nn.Linear(dim, int(dim * mlp_ratio)),
-            nn.ReLU(inplace=True),
-            nn.Linear(int(dim * mlp_ratio), dim),
+        self.output_dim = np.prod(output_shape)
+        self.output_shape = output_shape
+        self.arch = arch
+
+        arch_list = list(map(int, arch.split("-"))) if arch != "" else []
+        f = [embedding] + arch_list + [self.output_dim]
+        layers = []
+        for i in range(len(f) - 2):
+            layers.append(torch.nn.Linear(f[i], f[i + 1]))
+            layers.append(torch.nn.ReLU(True))
+        layers.append(torch.nn.Linear(f[-2], f[-1]))
+        self.prober = torch.nn.Sequential(*layers)
+
+    def forward(self, e):
+        output = self.prober(e)
+        return output
+
+
+class Encoder(nn.Module):
+    def __init__(self, repr_dim=256):
+        super().__init__()
+        # A simple CNN encoder
+        self.repr_dim = repr_dim
+        self.net = nn.Sequential(
+            nn.Conv2d(2, 32, 4, 2, 1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(True),
+            nn.Conv2d(32, 64, 4, 2, 1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(True),
+            nn.Conv2d(64, 128, 4, 2, 1),
+            nn.BatchNorm2d(128),
+            nn.ReLU(True),
+            nn.Flatten(),
+            nn.Linear(128 * 8 * 8, repr_dim),
         )
-        self.dropout = nn.Dropout(dropout)
 
     def forward(self, x):
-        # x: [B, N, D]
-        x = x + self.dropout(self.attn(self.norm1(x), self.norm1(x), self.norm1(x))[0])
-        x = x + self.dropout(self.mlp(self.norm2(x)))
-        return x
-
-
-class VisionTransformerEncoder(nn.Module):
-    def __init__(self, repr_dim=256, img_size=64, patch_size=8, in_chans=2, embed_dim=256, depth=4, num_heads=4):
-        super().__init__()
-        # Calculate number of patches
-        assert img_size % patch_size == 0, "Image size must be divisible by patch size."
-        self.num_patches = (img_size // patch_size) ** 2
-        patch_dim = in_chans * patch_size * patch_size
-
-        # Patch embedding
-        self.patch_size = patch_size
-        self.img_size = img_size
-        self.proj = nn.Linear(patch_dim, embed_dim)
-
-        # CLS token
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pos_embed = nn.Parameter(torch.zeros(1, self.num_patches + 1, embed_dim))
-
-        # Transformer layers
-        self.blocks = nn.ModuleList([
-            TransformerEncoder(dim=embed_dim, num_heads=num_heads) for _ in range(depth)
-        ])
-        self.norm = nn.LayerNorm(embed_dim)
-
-        # Final linear to repr_dim
-        self.fc = nn.Linear(embed_dim, repr_dim)
-
-        nn.init.trunc_normal_(self.pos_embed, std=.02)
-        nn.init.trunc_normal_(self.cls_token, std=.02)
-        nn.init.xavier_uniform_(self.fc.weight)
-        nn.init.zeros_(self.fc.bias)
-
-    def forward(self, x):
-        # x: [B, C, H, W]
-        B, C, H, W = x.shape
-
-        # Reshape into patches
-        # (B, C, H, W) -> (B, num_patches, patch_dim)
-        patches = x.unfold(2, self.patch_size, self.patch_size).unfold(3, self.patch_size, self.patch_size)
-        # patches shape: [B, C, H/patch, W/patch, patch_size, patch_size]
-        # rearrange patches into (B, N, patch_dim)
-        patches = patches.contiguous().permute(0,2,3,1,4,5).reshape(B, self.num_patches, -1)
-
-        x = self.proj(patches) # [B, N, embed_dim]
-
-        cls_tokens = self.cls_token.expand(B, -1, -1) # [B, 1, embed_dim]
-        x = torch.cat((cls_tokens, x), dim=1) # [B, N+1, embed_dim]
-
-        x = x + self.pos_embed
-
-        for blk in self.blocks:
-            x = blk(x)
-
-        x = self.norm(x)
-        # Take CLS token
-        cls = x[:, 0] # [B, embed_dim]
-
-        cls = self.fc(cls) # [B, repr_dim]
-        cls = F.normalize(cls, dim=1)
-        return cls
+        # x: [B, 1, C, H, W] or [B, C, H, W] for a single frame
+        # Actually: x: [B, C, H, W]
+        return self.net(x)
 
 
 class Predictor(nn.Module):
     def __init__(self, repr_dim=256, action_dim=2):
         super().__init__()
-        self.fc1 = nn.Linear(repr_dim + action_dim, repr_dim)
-        self.bn1 = nn.BatchNorm1d(repr_dim)
-        self.relu = nn.ReLU(inplace=True)
-        self.fc2 = nn.Linear(repr_dim, repr_dim)
+        self.net = nn.Sequential(
+            nn.Linear(repr_dim + action_dim, repr_dim),
+            nn.ReLU(True),
+            nn.Linear(repr_dim, repr_dim),
+        )
 
-    def forward(self, embedding, action):
-        x = torch.cat([embedding, action], dim=1)
-        x = self.fc1(x)
-        x = self.bn1(x)
-        x = self.relu(x)
-        x = self.fc2(x)
-        x = F.normalize(x, dim=1)
-        return x
+    def forward(self, s, a):
+        # s: [B, D], a: [B, 2]
+        x = torch.cat([s, a], dim=-1)
+        return self.net(x)
 
 
-class JEPA_Model(nn.Module):
-    def __init__(self, repr_dim=256, action_dim=2, device="cuda"):
+class JEPAModel(nn.Module):
+    def __init__(self, repr_dim=256, momentum=0.99):
         super().__init__()
-        self.device = device
         self.repr_dim = repr_dim
-        self.action_dim = action_dim
+        self.momentum = momentum
 
-        # Use VisionTransformerEncoder instead of the original CNN encoder
-        self.encoder = VisionTransformerEncoder(repr_dim=self.repr_dim, img_size=64, patch_size=8, in_chans=2, embed_dim=256, depth=4, num_heads=4)
-        self.predictor = Predictor(repr_dim=self.repr_dim, action_dim=self.action_dim)
+        self.online_encoder = Encoder(repr_dim=repr_dim)
+        self.online_predictor = Predictor(repr_dim=repr_dim)
+        
+        # target encoder
+        self.target_encoder = Encoder(repr_dim=repr_dim)
+        self._update_target(1.0)  # initialize target params = online params
 
-        self.target_encoder = VisionTransformerEncoder(repr_dim=self.repr_dim, img_size=64, patch_size=8, in_chans=2, embed_dim=256, depth=4, num_heads=4)
-        self._initialize_target_encoder()
+    @torch.no_grad()
+    def _update_target(self, beta=None):
+        if beta is None:
+            beta = self.momentum
+        for tp, op in zip(self.target_encoder.parameters(), self.online_encoder.parameters()):
+            tp.data = beta * tp.data + (1 - beta) * op.data
 
-    def _initialize_target_encoder(self):
-        for param_q, param_k in zip(self.encoder.parameters(), self.target_encoder.parameters()):
-            param_k.data.copy_(param_q.data)
-            param_k.requires_grad = False
+    def encode_online(self, obs):
+        # obs: [B, C, H, W]
+        return self.online_encoder(obs)
 
-    def update_target_encoder(self, momentum=0.99):
-        for param_q, param_k in zip(self.encoder.parameters(), self.target_encoder.parameters()):
-            param_k.data = param_k.data * momentum + param_q.data * (1.0 - momentum)
+    @torch.no_grad()
+    def encode_target(self, obs):
+        # obs: [B, C, H, W]
+        return self.target_encoder(obs)
 
     def forward(self, states, actions):
-        B, T_state, C, H, W = states.shape
-        T = actions.shape[1] + 1
-        pred_encs = []
+        """
+        Inference mode: Given initial state and actions, predict latent states forward.
+        states: [B, 1, C, H, W]
+        actions: [B, T-1, 2]
+        output: [B, T, D]
+        We do teacher forcing: s_0 = encode_online(o_0), then predict s_1,... from s_0.
+        """
+        B, Tm1, _ = actions.shape
+        T = Tm1 + 1
+        # Encode initial observation
+        s0 = self.encode_online(states[:,0])  # states[:,0]: [B, C, H, W]
+        preds = [s0]
+        s = s0
+        for t in range(T-1):
+            a_t = actions[:, t]
+            s = self.online_predictor(s, a_t)
+            preds.append(s)
+        return torch.stack(preds, dim=1)  # [B, T, D]
 
-        s_t = self.encoder(states[:, 0].to(self.device))
-        pred_encs.append(s_t)
 
-        for t in range(T - 1):
-            a_t = actions[:, t].to(self.device)
-            s_tilde = self.predictor(s_t, a_t)
-            pred_encs.append(s_tilde)
-            s_t = s_tilde
+class JEPATrainer:
+    def __init__(self, model, device="cuda", lr=1e-3, momentum=0.99):
+        self.model = model
+        self.device = device
+        self.optimizer = optim.Adam(model.parameters(), lr=lr)
+        self.momentum = momentum
 
-        pred_encs = torch.stack(pred_encs, dim=0)  # [T, B, D]
-        return pred_encs
+    def train_step(self, states, actions):
+        """
+        states: [B, T, C, H, W]
+        actions: [B, T-1, 2]
+        
+        We'll compute loss:
+        For n=1...T:
+            tilde_s_n = predicted
+            s'_n = target_encoder(o_n)
+        minimize MSE(tilde_s_n, s'_n).
+        """
+        self.model.train()
+        B, T, C, H, W = states.shape
+        # encode target states
+        with torch.no_grad():
+            target_embs = []
+            for t in range(T):
+                obs_t = states[:, t]
+                t_enc = self.model.encode_target(obs_t)
+                target_embs.append(t_enc)
+            target_embs = torch.stack(target_embs, dim=1)  # [B, T, D]
 
+        # online forward
+        # we have states[:,0:1] for init, and actions to predict next states
+        pred_encs = self.model(states=states[:,0:1], actions=actions) # [B, T, D]
 
-class Prober(nn.Module):
-    def __init__(self, embedding: int, arch: str, output_shape: List[int]):
-        super().__init__()
-        self.output_dim = int(np.prod(output_shape))
-        embedding = int(embedding)
-        arch_list = list(map(int, arch.split("-"))) if arch != "" else []
-        arch_list = [int(a) for a in arch_list]
-        f = [embedding] + arch_list + [self.output_dim]
-        f = [int(x) for x in f]
+        loss = F.mse_loss(pred_encs, target_embs)
 
-        layers = []
-        for i in range(len(f) - 2):
-            layers.append(nn.Linear(f[i], f[i + 1]))
-            layers.append(nn.ReLU(True))
-        layers.append(nn.Linear(f[-2], f[-1]))
-        self.prober = nn.Sequential(*layers)
-
-    def forward(self, e):
-        output = self.prober(e)
-        return output
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+        # update target encoder
+        self.model._update_target()
+        return loss.item()
