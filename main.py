@@ -1,8 +1,10 @@
+# main.py
 from dataset import create_wall_dataloader
 from evaluator import ProbingEvaluator
 import torch
-from models import MockModel
+from models import JEPA_Model  # Updated import
 import glob
+import os  # Added import for os.path.exists
 
 
 def get_device():
@@ -74,10 +76,25 @@ def load_expert_data(device):
     return probe_train_expert_ds, probe_val_expert_ds
 
 
-def load_model():
-    """Load or initialize the model."""
-    # TODO: Replace MockModel with your trained model
-    model = MockModel()
+def load_model(device):
+    """Load or initialize the JEPA model."""
+    from models import JEPA_Model  # Import your JEPA model class
+
+    # Initialize the JEPA model with the same parameters used during training
+    model = JEPA_Model(
+        repr_dim=256,
+        action_dim=2,
+        device=device
+    ).to(device)
+
+    # Load the trained model weights
+    model_weights_path = "model_weights.pth"
+    if not os.path.exists(model_weights_path):
+        raise FileNotFoundError(f"Model weights not found at {model_weights_path}")
+
+    model.load_state_dict(torch.load(model_weights_path, map_location=device))
+    model.eval()  # Set the model to evaluation mode
+
     return model
 
 
@@ -100,8 +117,8 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
 
 if __name__ == "__main__":
     device = get_device()
-    model = load_model()
-    
+    model = load_model(device)
+
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total Trainable Parameters: {total_params:,}")
 
