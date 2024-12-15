@@ -84,7 +84,7 @@ def initialize_optimizer_scheduler(model: torch.nn.Module, config: TrainingConfi
     )
 
     scheduler = Scheduler(
-        schedule='Cosine',  # Pass schedule as a string
+        schedule=config.scheduler,  # Use the Enum member from config
         base_lr=config.learning_rate,
         data_loader=train_loader,
         epochs=config.epochs,
@@ -96,11 +96,12 @@ def initialize_optimizer_scheduler(model: torch.nn.Module, config: TrainingConfi
     return optimizer, scheduler
 
 
-def train_epoch(model: JEPA_Model, train_loader: DataLoader, optimizer: torch.optim.Optimizer, scheduler: Scheduler, config: TrainingConfig, normalizer: Normalizer):
+def train_epoch(model: JEPA_Model, train_loader: DataLoader, optimizer: torch.optim.Optimizer, scheduler: Scheduler, config: TrainingConfig, normalizer: Normalizer, global_step: int):
     """Train the model for one epoch."""
     model.train()
     epoch_loss = 0.0
     progress_bar = tqdm(train_loader, desc="Training", leave=False)
+    steps_in_epoch = 0  # Local step counter for the epoch
 
     for batch in progress_bar:
         states = batch.states  # [B, T, C, H, W]
@@ -120,7 +121,7 @@ def train_epoch(model: JEPA_Model, train_loader: DataLoader, optimizer: torch.op
             future_states = states[:, 1:]  # [B, T-1, C, H, W]
             B, T_minus1, C, H, W = future_states.shape
             # Reshape to [B*(T-1), C, H, W]
-            future_states_reshaped = future_states.reshape(-1, C, H, W)
+            future_states_reshaped = future_states.reshape(-1, C, H, W)  # [B*(T-1), C, H, W]
             # Pass through target encoder
             target_encs = model.target_encoder(future_states_reshaped.to(config.device))  # [B*(T-1), D]
 
@@ -135,8 +136,12 @@ def train_epoch(model: JEPA_Model, train_loader: DataLoader, optimizer: torch.op
         loss.backward()
         optimizer.step()
 
+        # Increment the global step
+        global_step += 1
+        steps_in_epoch += 1
+
         # Update learning rate
-        scheduler.adjust_learning_rate(step_increment=1)
+        scheduler.adjust_learning_rate(global_step)
 
         # Update target encoder
         model.update_target_encoder(momentum=config.momentum)
@@ -148,7 +153,7 @@ def train_epoch(model: JEPA_Model, train_loader: DataLoader, optimizer: torch.op
         progress_bar.set_postfix({"Loss": loss.item()})
 
     average_loss = epoch_loss / len(train_loader)
-    return average_loss
+    return average_loss, steps_in_epoch, global_step
 
 
 def validate(model: JEPA_Model, val_loader: DataLoader, config: TrainingConfig, normalizer: Normalizer):
@@ -173,7 +178,7 @@ def validate(model: JEPA_Model, val_loader: DataLoader, config: TrainingConfig, 
             future_states = states[:, 1:]  # [B, T-1, C, H, W]
             B, T_minus1, C, H, W = future_states.shape
             # Reshape to [B*(T-1), C, H, W]
-            future_states_reshaped = future_states.reshape(-1, C, H, W)
+            future_states_reshaped = future_states.reshape(-1, C, H, W)  # [B*(T-1), C, H, W]
             # Pass through target encoder
             target_encs = model.target_encoder(future_states_reshaped.to(config.device))  # [B*(T-1), D]
 
@@ -220,13 +225,16 @@ def main():
     # Initialize optimizer and scheduler
     optimizer, scheduler = initialize_optimizer_scheduler(model, config, train_loader)
 
+    # Initialize global step counter
+    global_step = 0
+
     # Training loop
     best_val_loss = float('inf')
     for epoch in range(1, config.epochs + 1):
         print(f"Epoch {epoch}/{config.epochs}")
 
         # Train for one epoch
-        train_loss = train_epoch(model, train_loader, optimizer, scheduler, config, normalizer)
+        train_loss, steps_in_epoch, global_step = train_epoch(model, train_loader, optimizer, scheduler, config, normalizer, global_step)
         print(f"Training Loss: {train_loss:.4f}")
 
         # Validate
