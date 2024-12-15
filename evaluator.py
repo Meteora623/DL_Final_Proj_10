@@ -1,5 +1,6 @@
+# evaluator.py
 from typing import NamedTuple, List, Any, Optional, Dict
-from itertools import chain
+from itertools import chain      
 from dataclasses import dataclass
 import itertools
 import os
@@ -10,7 +11,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from schedulers import Scheduler, LRSchedule
-from models import Prober, build_mlp
+from models import Prober, build_mlp  # Removed MockModel import
 from configs import ConfigBase
 
 from dataset import WallDataset
@@ -20,7 +21,7 @@ from normalizer import Normalizer
 @dataclass
 class ProbingConfig(ConfigBase):
     probe_targets: str = "locations"
-    lr: float = 0.0002
+    lr: float = 0.0002  # Tunable prober learning rate
     epochs: int = 20
     schedule: LRSchedule = LRSchedule.Cosine
     sample_timesteps: int = 30
@@ -46,7 +47,7 @@ def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
 class ProbingEvaluator:
     def __init__(
         self,
-        device: "cuda",
+        device: str,
         model: torch.nn.Module,
         probe_train_ds,
         probe_val_ds: dict,
@@ -64,7 +65,7 @@ class ProbingEvaluator:
         self.ds = probe_train_ds
         self.val_ds = probe_val_ds
 
-        self.normalizer = Normalizer()
+        self.normalizer = Normalizer(probe_train_ds)  # Updated Normalizer initialization
 
     def train_pred_prober(self):
         """
@@ -79,27 +80,29 @@ class ProbingEvaluator:
 
         if self.quick_debug:
             epochs = 1
-        test_batch = next(iter(dataset))
+        try:
+            test_batch = next(iter(dataset))
+            prober_output_shape = getattr(test_batch, "locations")[0, 0].shape
+        except StopIteration:
+            raise ValueError("The probe_train_ds is empty.")
 
-        prober_output_shape = getattr(test_batch, "locations")[0, 0].shape
         prober = Prober(
-            repr_dim,
-            config.prober_arch,
+            embedding=repr_dim,
+            arch=config.prober_arch,
             output_shape=prober_output_shape,
         ).to(self.device)
 
-        all_parameters = []
-        all_parameters += list(prober.parameters())
+        all_parameters = list(prober.parameters())
 
         optimizer_pred_prober = torch.optim.Adam(all_parameters, config.lr)
 
         step = 0
 
-        batch_size = dataset.batch_size
+        batch_size = dataset.batch_size if hasattr(dataset, 'batch_size') else 64
         batch_steps = None
 
         scheduler = Scheduler(
-            schedule=self.config.schedule,
+            schedule=config.schedule,
             base_lr=config.lr,
             data_loader=dataset,
             epochs=epochs,
@@ -111,12 +114,12 @@ class ProbingEvaluator:
         for epoch in tqdm(range(epochs), desc=f"Probe prediction epochs"):
             for batch in tqdm(dataset, desc="Probe prediction step"):
                 ################################################################################
-                # TODO: Forward pass through your model
-                init_states = batch.states[:, 0:1]  # BS, 1, C, H, W
-                pred_encs = model(states=init_states, actions=batch.actions)
-                pred_encs = pred_encs.transpose(0, 1)  # # BS, T, D --> T, BS, D
+                # Forward pass through your JEPA model
+                init_states = batch.states[:, 0:1]  # [B, 1, C, H, W]
+                pred_encs = model(states=init_states, actions=batch.actions)  # [B, T, D]
+                pred_encs = pred_encs.transpose(0, 1)  # [T, B, D]
 
-                # Make sure pred_encs has shape (T, BS, D) at this point
+                # Ensure pred_encs has shape [T, B, D]
                 ################################################################################
 
                 pred_encs = pred_encs.detach()
@@ -142,7 +145,7 @@ class ProbingEvaluator:
                         device=pred_encs.device,
                     )
 
-                    sampled_target_locs = torch.empty(bs, config.sample_timesteps, 2)
+                    sampled_target_locs = torch.empty(bs, config.sample_timesteps, 2).to(self.device)
 
                     for i in range(bs):
                         indices = torch.randperm(n_steps)[: config.sample_timesteps]
@@ -150,7 +153,7 @@ class ProbingEvaluator:
                         sampled_target_locs[i, :] = target[i, indices]
 
                     pred_encs = sampled_pred_encs
-                    target = sampled_target_locs.cuda()
+                    target = sampled_target_locs
 
                 pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
                 losses = location_losses(pred_locs, target)
@@ -194,28 +197,21 @@ class ProbingEvaluator:
         return avg_losses
 
     @torch.no_grad()
-    def evaluate_pred_prober(
-        self,
-        prober,
-        val_ds,
-        prefix="",
-    ):
-        quick_debug = self.quick_debug
-        config = self.config
-
-        model = self.model
+    def evaluate_pred_prober(self, prober: torch.nn.Module, val_ds: torch.utils.data.DataLoader, prefix: str = ""):
+        """
+        Evaluates the prober on a single validation dataset.
+        """
         probing_losses = []
         prober.eval()
 
-        for idx, batch in enumerate(tqdm(val_ds, desc="Eval probe pred")):
+        for idx, batch in enumerate(tqdm(val_ds, desc=f"Evaluating on {prefix}")):
             ################################################################################
-            # TODO: Forward pass through your model
-            init_states = batch.states[:, 0:1]  # BS, 1 C, H, W
-            pred_encs = model(states=init_states, actions=batch.actions)
-            # # BS, T, D --> T, BS, D
-            pred_encs = pred_encs.transpose(0, 1)
+            # Forward pass through your JEPA model
+            init_states = batch.states[:, 0:1]  # [B, 1, C, H, W]
+            pred_encs = self.model(states=init_states, actions=batch.actions)  # [B, T, D]
+            pred_encs = pred_encs.transpose(0, 1)  # [T, B, D]
 
-            # Make sure pred_encs has shape (T, BS, D) at this point
+            # Ensure pred_encs has shape [T, B, D]
             ################################################################################
 
             target = getattr(batch, "locations").cuda()
