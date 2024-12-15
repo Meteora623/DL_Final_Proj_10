@@ -1,5 +1,5 @@
 # dataset.py
-from typing import NamedTuple, Optional
+from typing import NamedTuple, Optional, List
 import torch
 import numpy as np
 import torchvision.transforms as transforms
@@ -15,10 +15,10 @@ class WallSample(NamedTuple):
 class WallDataset(torch.utils.data.Dataset):
     def __init__(
         self,
-        data_path,
-        probing=False,
-        device="cuda",
-        augment=False,  # Added augment parameter
+        data_path: str,
+        probing: bool = False,
+        device: str = "cuda",
+        augment: bool = False,  # Added augment parameter
     ):
         self.device = device
         self.probing = probing
@@ -46,11 +46,12 @@ class WallDataset(torch.utils.data.Dataset):
                 transforms.ToTensor(),
             ])
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.states)
 
-    def __getitem__(self, i):
-        states = torch.from_numpy(self.states[i]).float()
+    def __getitem__(self, i: int) -> WallSample:
+        # Make a copy to ensure the NumPy array is writable
+        states = torch.from_numpy(self.states[i].copy()).float()
         actions = torch.from_numpy(self.actions[i]).float()
 
         if self.augment:
@@ -66,7 +67,7 @@ class WallDataset(torch.utils.data.Dataset):
         actions = actions.to(self.device)
 
         if self.locations is not None:
-            locations = torch.from_numpy(self.locations[i]).float().to(self.device)
+            locations = torch.from_numpy(self.locations[i].copy()).float().to(self.device)
         else:
             locations = torch.empty(0).to(self.device)
 
@@ -74,13 +75,13 @@ class WallDataset(torch.utils.data.Dataset):
 
 
 def create_wall_dataloader(
-    data_path,
-    probing=False,
-    device="cuda",
-    batch_size=64,
-    train=True,
-    augment=False,  # Added augment parameter
-):
+    data_path: str,
+    probing: bool = False,
+    device: str = "cuda",
+    batch_size: int = 64,
+    train: bool = True,
+    augment: bool = False,  # Added augment parameter
+) -> torch.utils.data.DataLoader:
     ds = WallDataset(
         data_path=data_path,
         probing=probing,
@@ -93,8 +94,8 @@ def create_wall_dataloader(
         batch_size,
         shuffle=train,
         drop_last=True,
-        pin_memory=True,  # Changed to True for better performance on GPU
-        num_workers=4,  # Adjust based on your system
+        pin_memory=True,  # Kept True for better performance on GPU
+        num_workers=0,    # Set to 0 to avoid CUDA re-initialization issues
     )
 
     return loader
