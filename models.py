@@ -103,7 +103,7 @@ class JEPA_Model(nn.Module):
         return pred_encs
 
 
-class Prober(torch.nn.Module):
+class Prober(nn.Module):
     def __init__(
         self,
         embedding: int,
@@ -119,10 +119,10 @@ class Prober(torch.nn.Module):
         layers_dims = [embedding] + arch_list + [self.output_dim]
         layers = []
         for i in range(len(layers_dims) - 2):
-            layers.append(torch.nn.Linear(layers_dims[i], layers_dims[i + 1]))
-            layers.append(torch.nn.ReLU(True))
-        layers.append(torch.nn.Linear(layers_dims[-2], layers_dims[-1]))
-        self.prober = torch.nn.Sequential(*layers)
+            layers.append(nn.Linear(layers_dims[i], layers_dims[i + 1]))
+            layers.append(nn.ReLU(True))
+        layers.append(nn.Linear(layers_dims[-2], layers_dims[-1]))
+        self.prober = nn.Sequential(*layers)
 
     def forward(self, e):
         output = self.prober(e)
