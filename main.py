@@ -1,13 +1,20 @@
 # main.py
 
-import os
 import torch
-import warnings
-from models import JEPA_Model
-from dataset import create_wall_dataloader
-from normalizer import Normalizer
+import logging
+from torch.utils.data import DataLoader
 from evaluator import ProbingEvaluator
 from configs import ProbingConfig
+from models import YourJEPAModel  # Replace with your actual JEPA model import
+from normalizer import Normalizer
+
+def create_wall_dataloader(data_path, probing, device, batch_size, train, augment):
+    # Implement your DataLoader creation logic here
+    # This is a placeholder function. Replace with your actual DataLoader setup.
+    # Example:
+    # dataset = YourCustomDataset(data_path, probing=probing, train=train, augment=augment)
+    # return DataLoader(dataset, batch_size=batch_size, shuffle=train)
+    pass
 
 def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     """
@@ -20,6 +27,7 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
         probe_val_ds (dict): Dictionary of DataLoaders for the probing validation datasets.
     """
     config = ProbingConfig()
+
     evaluator = ProbingEvaluator(
         device=device,
         model=model,
@@ -35,34 +43,23 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     # Evaluate on validation datasets
     avg_losses = evaluator.evaluate_all(prober)
 
-    # Print or log the average losses
+    # Log the average losses
     for prefix, loss in avg_losses.items():
-        print(f"Validation Loss on {prefix}: {loss:.4f}")
+        logging.info(f"Validation Loss on {prefix}: {loss:.4f}")
 
 def main():
-    """
-    The main function to load the model, prepare datasets, and evaluate the model.
-    """
-    # Determine the computation device
+    # Setup logging
+    logging.basicConfig(level=logging.INFO)
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
     # Initialize your JEPA model
-    model = JEPA_Model(repr_dim=256, action_dim=2, device=device)
-
-    # Address the FutureWarning from torch.load
-    torch_version = torch.__version__
-    major, minor = map(int, torch_version.split('.')[:2])
-    
-    if (major, minor) >= (2, 0):
-        # If PyTorch version is 2.0 or higher, use weights_only=True
-        model.load_state_dict(torch.load("model_weights.pth", map_location=device, weights_only=True))
-    else:
-        # If not, suppress the FutureWarning (not recommended for long-term)
-        warnings.filterwarnings("ignore", category=FutureWarning)
-        model.load_state_dict(torch.load("model_weights.pth", map_location=device))
-    
+    model = YourJEPAModel()  # Replace with your actual JEPA model initialization
     model.to(device)
+
+    # Load model weights if necessary
+    # model.load_state_dict(torch.load("path_to_model_weights.pth"))
 
     # Prepare probe datasets
     probe_train_ds = create_wall_dataloader(
@@ -74,17 +71,24 @@ def main():
         augment=False,        # Typically, no augmentation for probing
     )
 
-    # Corrected Validation Data Path: Changed from 'val1' to 'val'
+    # Define validation datasets for 'normal' and 'wall'
     probe_val_ds = {
-        "val": create_wall_dataloader(
-            data_path="/scratch/DL24FA/probe_normal/val",
+        "normal": create_wall_dataloader(
+            data_path="/scratch/DL24FA/probe_normal/val_normal",
             probing=True,
             device=device,
             batch_size=64,
             train=False,
             augment=False,
         ),
-        # Add more validation datasets here if needed
+        "wall": create_wall_dataloader(
+            data_path="/scratch/DL24FA/probe_normal/val_wall",
+            probing=True,
+            device=device,
+            batch_size=64,
+            train=False,
+            augment=False,
+        ),
     }
 
     # Evaluate the model
