@@ -1,15 +1,12 @@
 import torch
 from dataset import create_wall_dataloader
 from models import JEPA_Model
-from normalizer import Normalizer
 from schedulers import Scheduler, LRSchedule
-from configs import ConfigBase
-from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 import torch.nn.functional as F
 
 
-class TrainingConfig(ConfigBase):
+class TrainingConfig:
     device: str = "cuda" if torch.cuda.is_available() else "cpu"
     data_path: str = "/scratch/DL24FA/train/"
     batch_size: int = 64
@@ -23,10 +20,11 @@ class TrainingConfig(ConfigBase):
     augment: bool = True
 
 
-def train_epoch(model, train_loader, optimizer, scheduler, config, normalizer):
+def train_epoch(model, train_loader, optimizer, scheduler, config):
     model.train()
     total_loss = 0
-    for batch in tqdm(train_loader, desc="Training"):
+    max_steps = len(train_loader) * config.epochs
+    for step, batch in enumerate(tqdm(train_loader, desc="Training")):
         states = batch.states
         actions = batch.actions
 
@@ -36,7 +34,8 @@ def train_epoch(model, train_loader, optimizer, scheduler, config, normalizer):
         loss = F.mse_loss(pred_encs[1:], target_encs)
         loss.backward()
         optimizer.step()
-        scheduler.adjust_learning_rate(step=len(train_loader))
+
+        scheduler.adjust_learning_rate(step, max_steps)
 
         total_loss += loss.item()
 
@@ -65,11 +64,11 @@ def main():
 
     model = JEPA_Model(repr_dim=config.repr_dim, action_dim=config.action_dim, device=config.device)
     optimizer = torch.optim.Adam(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
-    scheduler = Scheduler(LRSchedule.Cosine, config.learning_rate, train_loader, config.epochs, optimizer)
+    scheduler = Scheduler(LRSchedule.Cosine, config.learning_rate, config.batch_size, config.epochs, optimizer)
 
     best_val_loss = float("inf")
     for epoch in range(config.epochs):
-        train_loss = train_epoch(model, train_loader, optimizer, scheduler, config, Normalizer())
+        train_loss = train_epoch(model, train_loader, optimizer, scheduler, config)
         val_loss = validate(model, val_loader, config)
         print(f"Epoch {epoch + 1}/{config.epochs} - Train Loss: {train_loss:.4f}, Val Loss: {val_loss:.4f}")
 
