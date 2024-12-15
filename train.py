@@ -19,7 +19,7 @@ if __name__ == "__main__":
     model = JEPAModel(repr_dim=256, momentum=0.99).to(device)
     trainer = JEPATrainer(model, device=device, lr=1e-3, momentum=0.99)
 
-    epochs = 10  # Adjust as needed
+    epochs = 2  # Adjust as needed
     for epoch in range(epochs):
         total_loss = 0
         count = 0
