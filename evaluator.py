@@ -1,14 +1,20 @@
 from typing import NamedTuple, List, Any, Optional, Dict
+from itertools import chain
+from dataclasses import dataclass
+import itertools
+import os
 import torch
-from torch import nn
 import torch.nn.functional as F
 from tqdm.auto import tqdm
-from dataclasses import dataclass
-from dataset import WallDataset
-from normalizer import Normalizer
-from configs import ConfigBase
+import numpy as np
+from matplotlib import pyplot as plt
+
 from schedulers import Scheduler, LRSchedule
 from models import Prober
+from configs import ConfigBase
+
+from dataset import WallDataset
+from normalizer import Normalizer
 
 
 @dataclass
@@ -21,68 +27,197 @@ class ProbingConfig(ConfigBase):
     prober_arch: str = "256"
 
 
+class ProbeResult(NamedTuple):
+    model: torch.nn.Module
+    average_eval_loss: float
+    eval_losses_per_step: List[float]
+    plots: List[Any]
+
+
+default_config = ProbingConfig()
+
+
+def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+    assert pred.shape == target.shape
+    mse = (pred - target).pow(2).mean(dim=0)
+    return mse
+
+
 class ProbingEvaluator:
-    def __init__(self, device, model, probe_train_ds, probe_val_ds, config, quick_debug=False):
+    def __init__(
+        self,
+        device: "cuda",
+        model: torch.nn.Module,
+        probe_train_ds,
+        probe_val_ds: dict,
+        config: ProbingConfig = default_config,
+        quick_debug: bool = False,
+    ):
         self.device = device
-        self.model = model.to(self.device)
+        self.config = config
+
+        self.model = model
         self.model.eval()
+
+        self.quick_debug = quick_debug
+
         self.ds = probe_train_ds
         self.val_ds = probe_val_ds
-        self.config = config
-        self.quick_debug = quick_debug
+
         self.normalizer = Normalizer()
 
     def train_pred_prober(self):
+        """
+        Probes whether the predicted embeddings capture the future locations
+        """
         repr_dim = self.model.repr_dim
         dataset = self.ds
         model = self.model
+
         config = self.config
         epochs = config.epochs
 
-        prober = Prober(repr_dim, config.prober_arch, output_shape=(2,)).to(self.device)
-        optimizer = torch.optim.Adam(prober.parameters(), config.lr)
-        criterion = nn.MSELoss()
+        if self.quick_debug:
+            epochs = 1
+        test_batch = next(iter(dataset))
 
-        for epoch in tqdm(range(epochs), desc="Training prober"):
-            for batch in tqdm(dataset, desc="Prober training step"):
-                states = batch.states.to(self.device)
-                actions = batch.actions.to(self.device)
-                locations = batch.locations.to(self.device)
+        prober_output_shape = getattr(test_batch, "locations")[0, 0].shape
+        prober = Prober(
+            repr_dim,
+            config.prober_arch,
+            output_shape=prober_output_shape,
+        ).to(self.device)
 
-                embeddings = model(states, actions)
-                pred_locations = prober(embeddings.view(-1, repr_dim))
+        all_parameters = []
+        all_parameters += list(prober.parameters())
 
-                target_locations = locations.view(-1, 2)
-                loss = criterion(pred_locations, target_locations)
+        optimizer_pred_prober = torch.optim.Adam(all_parameters, config.lr)
 
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
+        step = 0
+        batch_size = dataset.batch_size
+        batch_steps = None
 
-                print(f"Loss: {loss.item()}")
+        scheduler = Scheduler(
+            schedule=self.config.schedule,
+            base_lr=config.lr,
+            data_loader=dataset,
+            epochs=epochs,
+            optimizer=optimizer_pred_prober,
+            batch_steps=batch_steps,
+            batch_size=batch_size,
+        )
+
+        for epoch in tqdm(range(epochs), desc=f"Probe prediction epochs"):
+            for batch in tqdm(dataset, desc="Probe prediction step"):
+                ################################################################################
+                # Forward pass through your model
+                # states: [B, T, C, H, W], actions: [B, T-1, 2]
+                # model should produce embeddings [B, T, D]
+                init_states = batch.states[:, 0:1]  # [B, 1, C, H, W]
+                pred_encs = model(states=init_states, actions=batch.actions) 
+                # pred_encs: [B, T, D]
+                pred_encs = pred_encs.transpose(0, 1)  # [T, B, D]
+                ################################################################################
+
+                pred_encs = pred_encs.detach()
+
+                n_steps = pred_encs.shape[0]
+                bs = pred_encs.shape[1]
+
+                target = getattr(batch, "locations").cuda()
+                target = self.normalizer.normalize_location(target)
+
+                if (
+                    config.sample_timesteps is not None
+                    and config.sample_timesteps < n_steps
+                ):
+                    # randomly sample timesteps to avoid OOM
+                    sample_shape = (config.sample_timesteps,) + pred_encs.shape[1:]
+                    sampled_pred_encs = torch.empty(
+                        sample_shape,
+                        dtype=pred_encs.dtype,
+                        device=pred_encs.device,
+                    )
+
+                    sampled_target_locs = torch.empty(bs, config.sample_timesteps, 2).to(pred_encs.device)
+
+                    for i in range(bs):
+                        indices = torch.randperm(n_steps)[: config.sample_timesteps]
+                        sampled_pred_encs[:, i, :] = pred_encs[indices, i, :]
+                        sampled_target_locs[i, :] = target[i, indices]
+
+                    pred_encs = sampled_pred_encs
+                    target = sampled_target_locs
+
+                pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
+                losses = location_losses(pred_locs, target)
+                per_probe_loss = losses.mean()
+
+                if step % 100 == 0:
+                    print(f"normalized pred locations loss {per_probe_loss.item()}")
+
+                optimizer_pred_prober.zero_grad()
+                per_probe_loss.backward()
+                optimizer_pred_prober.step()
+
+                lr = scheduler.adjust_learning_rate(step)
+                step += 1
+
+                if self.quick_debug and step > 2:
+                    break
 
         return prober
 
-    def evaluate_all(self, prober):
-        losses = {}
-        for key, val_ds in self.val_ds.items():
-            losses[key] = self.evaluate_pred_prober(prober, val_ds)
-        return losses
+    @torch.no_grad()
+    def evaluate_all(
+        self,
+        prober,
+    ):
+        avg_losses = {}
 
-    def evaluate_pred_prober(self, prober, val_ds):
-        total_loss = 0.0
-        num_batches = 0
-        for batch in tqdm(val_ds, desc="Evaluating prober"):
-            states = batch.states.to(self.device)
-            actions = batch.actions.to(self.device)
-            locations = batch.locations.to(self.device)
+        for prefix, val_ds in self.val_ds.items():
+            avg_losses[prefix] = self.evaluate_pred_prober(
+                prober=prober,
+                val_ds=val_ds,
+                prefix=prefix,
+            )
 
-            embeddings = self.model(states, actions)
-            pred_locations = prober(embeddings.view(-1, self.model.repr_dim))
-            target_locations = locations.view(-1, 2)
+        return avg_losses
 
-            loss = nn.MSELoss()(pred_locations, target_locations)
-            total_loss += loss.item()
-            num_batches += 1
+    @torch.no_grad()
+    def evaluate_pred_prober(
+        self,
+        prober,
+        val_ds,
+        prefix="",
+    ):
+        quick_debug = self.quick_debug
+        config = self.config
 
-        return total_loss / num_batches
+        model = self.model
+        probing_losses = []
+        prober.eval()
+
+        for idx, batch in enumerate(tqdm(val_ds, desc="Eval probe pred")):
+            ################################################################################
+            # Forward pass through your model
+            init_states = batch.states[:, 0:1]
+            pred_encs = model(states=init_states, actions=batch.actions)
+            # pred_encs: [B, T, D]
+            pred_encs = pred_encs.transpose(0, 1)  # [T, B, D]
+            ################################################################################
+
+            target = getattr(batch, "locations").cuda()
+            target = self.normalizer.normalize_location(target)
+
+            pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
+            losses = location_losses(pred_locs, target)
+            probing_losses.append(losses.cpu())
+
+        losses_t = torch.stack(probing_losses, dim=0).mean(dim=0)
+        losses_t = self.normalizer.unnormalize_mse(losses_t)
+
+        losses_t = losses_t.mean(dim=-1)
+        average_eval_loss = losses_t.mean().item()
+
+        return average_eval_loss
