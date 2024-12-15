@@ -1,57 +1,64 @@
-from enum import auto, Enum
-import math
+# normalizer.py
+import torch
+import numpy as np
 
 
-class LRSchedule(Enum):
-    Constant = auto()
-    Cosine = auto()
-
-
-class Scheduler:
-    def __init__(
-        self,
-        schedule: str,
-        base_lr: float,
-        data_loader,
-        epochs: int,
-        optimizer,
-        batch_steps=None,
-        batch_size=None,
-    ):
-        self.schedule = schedule
-        self.base_lr = base_lr
-        self.data_loader = data_loader
-        self.epochs = epochs
-        self.optimizer = optimizer
-
-        if batch_size is None:
-            self.batch_size = data_loader.config.batch_size
+class Normalizer:
+    def __init__(self, data_loader=None):
+        if data_loader is not None:
+            all_locations = []
+            for batch in data_loader:
+                if batch.locations.numel() > 0:
+                    all_locations.append(batch.locations)
+            if all_locations:
+                all_locations = torch.cat(all_locations, dim=0)  # [N, T, 2]
+                self.mean = all_locations.mean(dim=(0, 1), keepdim=True)
+                self.std = all_locations.std(dim=(0, 1), keepdim=True) + 1e-6  # Prevent division by zero
+                print(f"Computed Normalizer Mean: {self.mean}")
+                print(f"Computed Normalizer Std: {self.std}")
+            else:
+                self.mean = torch.zeros(1, 1, 2)
+                self.std = torch.ones(1, 1, 2)
+                print("No locations found in data_loader. Using default mean and std.")
         else:
-            self.batch_size = batch_size
+            # Use predefined mean and std
+            self.mean = torch.tensor([31.5863, 32.0618]).view(1, 1, 2)
+            self.std = torch.tensor([16.1025, 16.1353]).view(1, 1, 2)
+            print(f"Using Predefined Normalizer Mean: {self.mean}")
+            print(f"Using Predefined Normalizer Std: {self.std}")
 
-        if batch_steps is None:
-            self.batch_steps = len(data_loader)
-        else:
-            self.batch_steps = batch_steps
+    def normalize_location(self, loc: torch.Tensor) -> torch.Tensor:
+        """
+        Normalizes the location tensor.
 
-    def adjust_learning_rate(self, step: int):
-        if self.schedule == LRSchedule.Constant:
-            return self.base_lr
-        else:
-            max_steps = self.epochs * self.batch_steps
-            warmup_steps = int(0.10 * max_steps)
-            for param_group in self.optimizer.param_groups:
-                base_lr = (
-                    param_group["base_lr"] if "base_lr" in param_group else self.base_lr
-                )
-                base_lr = base_lr * self.batch_size / 256
-                if step < warmup_steps:
-                    lr = base_lr * step / warmup_steps
-                else:
-                    step -= warmup_steps
-                    max_steps -= warmup_steps
-                    q = 0.5 * (1 + math.cos(math.pi * step / max_steps))
-                    end_lr = base_lr * 0.001
-                    lr = base_lr * q + end_lr * (1 - q)
-                param_group["lr"] = lr
-            return lr
+        Args:
+            loc (torch.Tensor): Tensor of shape [B, T, 2].
+
+        Returns:
+            torch.Tensor: Normalized tensor.
+        """
+        return (loc - self.mean.to(loc.device)) / self.std.to(loc.device)
+
+    def unnormalize_location(self, loc: torch.Tensor) -> torch.Tensor:
+        """
+        Unnormalizes the location tensor.
+
+        Args:
+            loc (torch.Tensor): Normalized tensor of shape [B, T, 2].
+
+        Returns:
+            torch.Tensor: Unnormalized tensor.
+        """
+        return loc * self.std.to(loc.device) + self.mean.to(loc.device)
+
+    def unnormalize_mse(self, mse):
+        """
+        Unnormalizes the MSE loss.
+
+        Args:
+            mse (torch.Tensor): MSE loss tensor.
+
+        Returns:
+            float: Unnormalized MSE loss.
+        """
+        return mse * (self.std.to(mse.device) ** 2).sum().item()
