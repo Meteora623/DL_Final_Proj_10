@@ -93,7 +93,7 @@ def create_wall_dataloader(
         shuffle=train,
         drop_last=True,
         pin_memory=False,  # Set to False to avoid CUDA pin_memory error
-        num_workers=0,    # Set to 0 to avoid CUDA re-initialization issues
+        num_workers=0,     # Set to 0 to avoid CUDA re-initialization issues
     )
 
     return loader
