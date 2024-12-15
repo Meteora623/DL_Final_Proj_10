@@ -14,7 +14,7 @@ from schedulers import Scheduler, LRSchedule
 from configs import ConfigBase
 from dataclasses import dataclass
 
-# Define Training Configuration
+
 @dataclass
 class TrainingConfig(ConfigBase):
     device: str = "cuda"  # Device to use: 'cuda' or 'cpu'
@@ -32,11 +32,13 @@ class TrainingConfig(ConfigBase):
     model_weights_path: str = "model_weights.pth"  # Path to save the trained model
     augment: bool = False  # Whether to apply data augmentation
 
+
 def get_device(device_str: str):
     """Get the computation device."""
     device = torch.device(device_str if torch.cuda.is_available() and device_str == "cuda" else "cpu")
     print(f"Using device: {device}")
     return device
+
 
 def load_data(config: TrainingConfig):
     """Load training and validation data loaders."""
@@ -62,6 +64,7 @@ def load_data(config: TrainingConfig):
 
     return train_loader, val_loader
 
+
 def initialize_model(config: TrainingConfig):
     """Initialize the JEPA model."""
     model = JEPA_Model(
@@ -70,6 +73,7 @@ def initialize_model(config: TrainingConfig):
         device=config.device
     ).to(config.device)
     return model
+
 
 def initialize_optimizer_scheduler(model: torch.nn.Module, config: TrainingConfig, train_loader: DataLoader):
     """Initialize the optimizer and learning rate scheduler."""
@@ -80,7 +84,7 @@ def initialize_optimizer_scheduler(model: torch.nn.Module, config: TrainingConfi
     )
 
     scheduler = Scheduler(
-        schedule=config.scheduler,
+        schedule='Cosine',  # Pass schedule as a string
         base_lr=config.learning_rate,
         data_loader=train_loader,
         epochs=config.epochs,
@@ -90,6 +94,7 @@ def initialize_optimizer_scheduler(model: torch.nn.Module, config: TrainingConfi
     )
 
     return optimizer, scheduler
+
 
 def train_epoch(model: JEPA_Model, train_loader: DataLoader, optimizer: torch.optim.Optimizer, scheduler: Scheduler, config: TrainingConfig, normalizer: Normalizer):
     """Train the model for one epoch."""
@@ -127,7 +132,7 @@ def train_epoch(model: JEPA_Model, train_loader: DataLoader, optimizer: torch.op
         optimizer.step()
 
         # Update learning rate
-        scheduler.adjust_learning_rate()
+        scheduler.adjust_learning_rate(step_increment=1)
 
         # Update target encoder
         model.update_target_encoder(momentum=config.momentum)
@@ -140,6 +145,7 @@ def train_epoch(model: JEPA_Model, train_loader: DataLoader, optimizer: torch.op
 
     average_loss = epoch_loss / len(train_loader)
     return average_loss
+
 
 def validate(model: JEPA_Model, val_loader: DataLoader, config: TrainingConfig, normalizer: Normalizer):
     """Validate the model on the validation set."""
@@ -178,11 +184,13 @@ def validate(model: JEPA_Model, val_loader: DataLoader, config: TrainingConfig, 
     average_val_loss = val_loss / len(val_loader)
     return average_val_loss
 
+
 def save_model(model: JEPA_Model, config: TrainingConfig, epoch: int, val_loss: float):
     """Save the model's state dictionary."""
     save_path = config.model_weights_path
     torch.save(model.state_dict(), save_path)
     print(f"Saved model at epoch {epoch} with validation loss {val_loss:.4f} to {save_path}")
+
 
 def main():
     # Initialize configuration
@@ -196,7 +204,7 @@ def main():
     train_loader, val_loader = load_data(config)
 
     # Initialize Normalizer (using predefined mean and std)
-    normalizer = Normalizer(data_loader=None)  # Using predefined values
+    normalizer = Normalizer()  # Initialized without arguments
 
     # Initialize model
     model = initialize_model(config)
@@ -226,6 +234,7 @@ def main():
             print(f"No improvement in validation loss.")
 
     print("Training complete.")
+
 
 if __name__ == "__main__":
     main()
