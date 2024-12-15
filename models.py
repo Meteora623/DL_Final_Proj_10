@@ -1,11 +1,11 @@
 # models.py
+
 from typing import List
 import numpy as np
 from torch import nn
 from torch.nn import functional as F
 import torch
 from torchvision import models
-
 
 def build_mlp(layers_dims: List[int]):
     layers = []
@@ -15,7 +15,6 @@ def build_mlp(layers_dims: List[int]):
         layers.append(nn.ReLU(True))
     layers.append(nn.Linear(layers_dims[-2], layers_dims[-1]))
     return nn.Sequential(*layers)
-
 
 class ResNetEncoder(nn.Module):
     def __init__(self, repr_dim=256):
@@ -32,7 +31,6 @@ class ResNetEncoder(nn.Module):
         x = self.projection(x)  # [B, repr_dim]
         x = F.normalize(x, dim=1)
         return x
-
 
 class Predictor(nn.Module):
     def __init__(self, repr_dim=256, action_dim=2):
@@ -52,7 +50,6 @@ class Predictor(nn.Module):
         x = self.fc2(x)  # [B, repr_dim]
         x = F.normalize(x, dim=1)
         return x
-
 
 class JEPA_Model(nn.Module):
     def __init__(self, repr_dim=256, action_dim=2, device="cuda"):
@@ -101,7 +98,6 @@ class JEPA_Model(nn.Module):
 
         pred_encs = torch.stack(pred_encs, dim=0)  # [T, B, D]
         return pred_encs
-
 
 class Prober(nn.Module):
     def __init__(
