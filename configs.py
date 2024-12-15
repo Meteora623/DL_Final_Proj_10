@@ -1,46 +1,20 @@
 # configs.py
 
 from dataclasses import dataclass
-from enum import Enum, auto
 from typing import Optional
 
-class LRSchedule(Enum):
-    Constant = auto()
-    Cosine = auto()
-
 @dataclass
-class ConfigBase:
-    """
-    Base configuration class. Extend this class to add more configurations.
-    """
-    pass
-
-@dataclass
-class TrainingConfig(ConfigBase):
-    """
-    Configuration parameters for training the JEPA model.
-    """
-    device: str = "cuda"                     # Device to use: 'cuda' or 'cpu'
-    data_path: str = "/scratch/DL24FA"       # Path to the data directory
-    train_split: str = "probe_normal/train"  # Training data split
-    val_split: str = "probe_normal/val"      # Validation data split
-    batch_size: int = 64                      # Batch size
-    epochs: int = 2                           # Number of training epochs
-    learning_rate: float = 1e-3               # Learning rate for the optimizer
-    weight_decay: float = 1e-5                # Weight decay for the optimizer
-    scheduler: LRSchedule = LRSchedule.Cosine # Learning rate scheduler type
-    momentum: float = 0.99                     # Momentum for updating the target encoder
-    repr_dim: int = 256                        # Representation dimension
-    action_dim: int = 2                        # Action dimension
-    model_weights_path: str = "model_weights.pth" # Path to save the trained model
-    augment: bool = False                      # Whether to apply data augmentation
-
-@dataclass
-class ProbingConfig(ConfigBase):
-    """
-    Configuration parameters for probing the JEPA model.
-    """
-    epochs: int = 10                           # Number of probing epochs
-    prober_arch: str = "512-256-128"           # Architecture of the prober (e.g., "512-256-128")
-    lr: float = 1e-3                            # Learning rate for the prober optimizer
-    sample_timesteps: Optional[int] = None      # Number of timesteps to sample (set to None to use all)
+class ProbingConfig:
+    epochs: int = 30  # Increased from 20 to allow more training
+    prober_arch: str = "1024-512-256-128"  # Expanded architecture for higher capacity
+    lr: float = 0.0001  # Reduced learning rate for finer adjustments
+    sample_timesteps: Optional[int] = None  # Set to None to use all timesteps
+    train_path_expert: str = "/scratch/DL24FA/probe_expert/train"
+    val_path_expert: str = "/scratch/DL24FA/probe_expert/val"
+    train_path_wall_other: str = "/scratch/DL24FA/probe_wall_other/train"
+    val_path_wall_other: str = "/scratch/DL24FA/probe_wall_other/val"
+    batch_size: int = 64
+    augment: bool = False
+    repr_dim: int = 256
+    action_dim: int = 2
+    model_weights_path: str = "model_weights.pth"
