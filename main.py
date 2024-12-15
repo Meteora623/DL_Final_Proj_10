@@ -5,16 +5,73 @@ import logging
 from torch.utils.data import DataLoader
 from evaluator import ProbingEvaluator
 from configs import ProbingConfig
-from models import YourJEPAModel  # Replace with your actual JEPA model import
+from models import JEPAModel  # Ensure JEPAModel is correctly imported
 from normalizer import Normalizer
 
-def create_wall_dataloader(data_path, probing, device, batch_size, train, augment):
-    # Implement your DataLoader creation logic here
-    # This is a placeholder function. Replace with your actual DataLoader setup.
-    # Example:
-    # dataset = YourCustomDataset(data_path, probing=probing, train=train, augment=augment)
-    # return DataLoader(dataset, batch_size=batch_size, shuffle=train)
-    pass
+def create_dataloader(data_path, probing, device, batch_size, train, augment):
+    """
+    Creates a DataLoader for the given dataset.
+
+    Args:
+        data_path (str): Path to the dataset directory.
+        probing (bool): Whether to use probing mode.
+        device (torch.device): Device to load the data on.
+        batch_size (int): Batch size.
+        train (bool): Whether to create a training DataLoader.
+        augment (bool): Whether to apply data augmentation.
+
+    Returns:
+        DataLoader: PyTorch DataLoader instance.
+    """
+    # Implement your actual dataset loading logic here.
+    # The following is a placeholder using random data.
+
+    from torch.utils.data import Dataset, TensorDataset
+
+    class CustomDataset(Dataset):
+        def __init__(self, data_path, probing, train, augment):
+            """
+            Initialize your dataset.
+
+            Args:
+                data_path (str): Path to the dataset.
+                probing (bool): Whether to use probing mode.
+                train (bool): Whether it's training data.
+                augment (bool): Whether to apply augmentation.
+            """
+            # Replace the following with actual data loading logic
+            # For example, loading from .npy files or any other format
+            # Example:
+            # self.states = torch.load(os.path.join(data_path, "states.pt"))
+            # self.actions = torch.load(os.path.join(data_path, "actions.pt"))
+            # self.locations = torch.load(os.path.join(data_path, "locations.pt"))
+
+            # Placeholder: Generate random data
+            B = 1000 if train else 200  # Number of samples
+            T = 17  # Number of timesteps
+            C = 3  # Number of channels
+            H = 224  # Height
+            W = 224  # Width
+            A = 2  # Action dimensions
+
+            self.states = torch.randn(B, T, C, H, W)
+            self.actions = torch.randn(B, T, A)
+            self.locations = torch.randn(B, T, 2)
+
+            # Apply augmentation if needed
+            if augment and train:
+                # Implement your augmentation logic here
+                pass
+
+        def __len__(self):
+            return self.states.shape[0]
+
+        def __getitem__(self, idx):
+            return self.states[idx], self.actions[idx], self.locations[idx]
+
+    dataset = CustomDataset(data_path, probing, train, augment)
+    shuffle = train
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
 
 def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     """
@@ -48,6 +105,9 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
         logging.info(f"Validation Loss on {prefix}: {loss:.4f}")
 
 def main():
+    """
+    Main function to train and evaluate the Prober.
+    """
     # Setup logging
     logging.basicConfig(level=logging.INFO)
 
@@ -55,15 +115,17 @@ def main():
     print(f"Using device: {device}")
 
     # Initialize your JEPA model
-    model = YourJEPAModel()  # Replace with your actual JEPA model initialization
+    model = JEPAModel()  # Replace with your actual JEPA model initialization if different
     model.to(device)
 
     # Load model weights if necessary
-    # model.load_state_dict(torch.load("path_to_model_weights.pth"))
+    # Example:
+    # model.load_state_dict(torch.load(config.model_weights_path))
+    # model.eval()
 
-    # Prepare probe datasets
-    probe_train_ds = create_wall_dataloader(
-        data_path="/scratch/DL24FA/probe_normal/train",
+    # Prepare probe training dataset
+    probe_train_ds = create_dataloader(
+        data_path="/scratch/DL24FA/probe_expert/train",
         probing=True,        # Set to True for probing
         device=device,
         batch_size=64,
@@ -71,18 +133,18 @@ def main():
         augment=False,        # Typically, no augmentation for probing
     )
 
-    # Define validation datasets for 'normal' and 'wall'
+    # Define validation datasets for 'expert' and 'wall_other'
     probe_val_ds = {
-        "normal": create_wall_dataloader(
-            data_path="/scratch/DL24FA/probe_normal/val_normal",
+        "expert": create_dataloader(
+            data_path="/scratch/DL24FA/probe_expert/val",
             probing=True,
             device=device,
             batch_size=64,
             train=False,
             augment=False,
         ),
-        "wall": create_wall_dataloader(
-            data_path="/scratch/DL24FA/probe_normal/val_wall",
+        "wall_other": create_dataloader(
+            data_path="/scratch/DL24FA/probe_wall_other/val",
             probing=True,
             device=device,
             batch_size=64,
