@@ -1,4 +1,5 @@
 # evaluator.py
+
 from typing import Any, List, Optional, Tuple
 import torch
 import torch.nn as nn
@@ -6,7 +7,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from models import Prober  # Added import for Prober
+from models import Prober  # Ensure Prober is correctly imported
 from normalizer import Normalizer
 from configs import ProbingConfig
 
@@ -112,7 +113,17 @@ class ProbingEvaluator:
                     pred_encs = sampled_pred_encs
                     target = sampled_target_locs
 
-                pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
+                # Transpose pred_locs to match target shape if necessary
+                # Assuming pred_encs is [T, B, D] and prober outputs [2]
+                # pred_locs after stacking: [T, B, 2]
+                pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)  # [T, B, 2]
+                pred_locs = pred_locs.transpose(0, 1)  # [B, T, 2]
+
+                # Debugging: Print shapes to verify
+                print(f"Epoch {epoch+1}, Step {step+1}:")
+                print(f"pred_locs shape: {pred_locs.shape}")
+                print(f"target shape: {target.shape}")
+
                 losses = self.location_losses(pred_locs, target)
                 per_probe_loss = losses.mean()
 
@@ -172,7 +183,14 @@ class ProbingEvaluator:
             target = getattr(batch, "locations").cuda()
             target = self.normalizer.normalize_location(target)
 
-            pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
+            pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)  # [T, B, 2]
+            pred_locs = pred_locs.transpose(0, 1)  # [B, T, 2]
+
+            # Debugging: Print shapes to verify
+            print(f"Evaluation - {prefix} - Batch {idx+1}:")
+            print(f"pred_locs shape: {pred_locs.shape}")
+            print(f"target shape: {target.shape}")
+
             losses = self.location_losses(pred_locs, target)
             probing_losses.append(losses.cpu())
 
@@ -186,6 +204,6 @@ class ProbingEvaluator:
 
     @staticmethod
     def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        assert pred.shape == target.shape
+        assert pred.shape == target.shape, f"Shape mismatch: pred {pred.shape}, target {target.shape}"
         mse = (pred - target).pow(2).mean(dim=0)
         return mse
