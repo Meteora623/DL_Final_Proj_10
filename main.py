@@ -21,9 +21,9 @@ def load_data(config):
     probe_wall_val_path = '/scratch/DL24FA/probe_wall/val/'
 
     # Create datasets
-    probe_train_ds = WallDataset(probe_train_path, batch_size=config.batch_size)
-    probe_normal_val_ds = WallDataset(probe_normal_val_path, batch_size=config.batch_size)
-    probe_wall_val_ds = WallDataset(probe_wall_val_path, batch_size=config.batch_size)
+    probe_train_ds = WallDataset(probe_train_path, probing=True, device=config.device)
+    probe_normal_val_ds = WallDataset(probe_normal_val_path, probing=True, device=config.device)
+    probe_wall_val_ds = WallDataset(probe_wall_val_path, probing=True, device=config.device)
 
     # Dictionary of validation datasets
     probe_val_ds = {
@@ -32,6 +32,7 @@ def load_data(config):
     }
 
     return probe_train_ds, probe_val_ds
+
 
 
 def load_model(config):
