@@ -2,9 +2,9 @@
 from dataset import create_wall_dataloader
 from evaluator import ProbingEvaluator
 import torch
-from models import JEPA_Model  # Updated import
+from models import JEPA_Model
 import glob
-import os  # Added import for os.path.exists
+import os
 
 
 def get_device():
