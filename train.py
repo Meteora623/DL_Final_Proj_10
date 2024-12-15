@@ -116,15 +116,19 @@ def train_epoch(model: JEPA_Model, train_loader: DataLoader, optimizer: torch.op
 
         # Target encoder forward pass
         with torch.no_grad():
-            # Assuming target encoder is updated via momentum and used to generate target embeddings
-            target_encs = model.target_encoder(states[:, 1:].to(config.device))  # [B*(T-1), D]
-            target_encs = target_encs.view(1, -1, config.repr_dim)  # [1, B*(T-1), D]
+            # Extract future states: [B, T-1, C, H, W]
+            future_states = states[:, 1:]  # [B, T-1, C, H, W]
+            B, T_minus1, C, H, W = future_states.shape
+            # Reshape to [B*(T-1), C, H, W]
+            future_states_reshaped = future_states.reshape(-1, C, H, W)
+            # Pass through target encoder
+            target_encs = model.target_encoder(future_states_reshaped.to(config.device))  # [B*(T-1), D]
 
         # Reshape predicted embeddings to align with target embeddings
         pred_encs = pred_encs[1:].reshape(-1, config.repr_dim)  # [B*(T-1), D]
 
         # Compute loss (MSE between predicted and target embeddings)
-        loss = F.mse_loss(pred_encs, target_encs.squeeze(0))
+        loss = F.mse_loss(pred_encs, target_encs)
 
         # Backpropagation
         optimizer.zero_grad()
@@ -166,14 +170,18 @@ def validate(model: JEPA_Model, val_loader: DataLoader, config: TrainingConfig, 
             pred_encs = model(states=states, actions=actions)  # [T, B, D]
 
             # Target encoder forward pass
-            target_encs = model.target_encoder(states[:, 1:].to(config.device))  # [B*(T-1), D]
-            target_encs = target_encs.view(1, -1, config.repr_dim)  # [1, B*(T-1), D]
+            future_states = states[:, 1:]  # [B, T-1, C, H, W]
+            B, T_minus1, C, H, W = future_states.shape
+            # Reshape to [B*(T-1), C, H, W]
+            future_states_reshaped = future_states.reshape(-1, C, H, W)
+            # Pass through target encoder
+            target_encs = model.target_encoder(future_states_reshaped.to(config.device))  # [B*(T-1), D]
 
             # Reshape predicted embeddings to align with target embeddings
             pred_encs = pred_encs[1:].reshape(-1, config.repr_dim)  # [B*(T-1), D]
 
             # Compute loss (MSE between predicted and target embeddings)
-            loss = F.mse_loss(pred_encs, target_encs.squeeze(0))
+            loss = F.mse_loss(pred_encs, target_encs)
 
             # Accumulate loss
             val_loss += loss.item()
