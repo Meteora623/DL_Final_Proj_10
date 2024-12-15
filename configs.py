@@ -1,20 +1,49 @@
-# configs.py
-
+import argparse
+import dataclasses
 from dataclasses import dataclass
-from typing import Optional
+from enum import Enum
+from typing import Any, Iterable, Tuple, Union, cast, List
+
+from omegaconf import OmegaConf
+
+DataClass = Any
+DataClassType = Any
+
 
 @dataclass
-class ProbingConfig:
-    epochs: int = 30  # Increased from 20 to allow more training
-    prober_arch: str = "1024-512-256-128"  # Expanded architecture for higher capacity
-    lr: float = 0.0001  # Reduced learning rate for finer adjustments
-    sample_timesteps: Optional[int] = None  # Set to None to use all timesteps
-    train_path_expert: str = "/scratch/DL24FA/probe_expert/train"
-    val_path_expert: str = "/scratch/DL24FA/probe_expert/val"
-    train_path_wall_other: str = "/scratch/DL24FA/probe_wall_other/train"
-    val_path_wall_other: str = "/scratch/DL24FA/probe_wall_other/val"
-    batch_size: int = 64
-    augment: bool = False
-    repr_dim: int = 256
-    action_dim: int = 2
-    model_weights_path: str = "model_weights.pth"
+class ConfigBase:
+    """Base class that should handle parsing from command line,
+    json, dicts.
+    """
+
+    @classmethod
+    def parse_from_command_line(cls):
+        return omegaconf_parse(cls)
+
+    @classmethod
+    def parse_from_file(cls, path: str):
+        oc = OmegaConf.load(path)
+        return cls.parse_from_dict(OmegaConf.to_container(oc))
+
+    @classmethod
+    def parse_from_command_line_deprecated(cls):
+        result = DataclassArgParser(
+            cls, fromfile_prefix_chars="@"
+        ).parse_args_into_dataclasses()
+        if len(result) > 1:
+            raise RuntimeError(
+                f"The following arguments were not recognized: {result[1:]}"
+            )
+        return result[0]
+
+    @classmethod
+    def parse_from_dict(cls, inputs):
+        return DataclassArgParser._populate_dataclass_from_dict(cls, inputs.copy())
+
+    @classmethod
+    def parse_from_flat_dict(cls, inputs):
+        return DataclassArgParser._populate_dataclass_from_flat_dict(cls, inputs.copy())
+
+    def save(self, path: str):
+        with open(path, "w") as f:
+            OmegaConf.save(config=self, f=f)
