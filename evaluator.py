@@ -7,7 +7,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from models import Prober  # Ensure Prober is correctly imported
+from models import JEPAModel  # Ensure JEPAModel is correctly imported
+from prober import Prober
 from normalizer import Normalizer
 from configs import ProbingConfig
 import matplotlib.pyplot as plt
@@ -24,6 +25,17 @@ class ProbingEvaluator:
         config: ProbingConfig = ProbingConfig(),
         quick_debug: bool = False,
     ):
+        """
+        Initializes the ProbingEvaluator.
+
+        Args:
+            device (str): Device to run computations on.
+            model (torch.nn.Module): Trained JEPA model.
+            probe_train_ds (DataLoader): DataLoader for the probing training dataset.
+            probe_val_ds (Dict[str, DataLoader]): Dictionary of DataLoaders for the probing validation datasets.
+            config (ProbingConfig): Configuration settings.
+            quick_debug (bool): If True, runs for a few steps for debugging.
+        """
         self.device = device
         self.config = config
 
@@ -40,8 +52,12 @@ class ProbingEvaluator:
     def train_pred_prober(self) -> Prober:
         """
         Trains the Prober to predict future locations based on embeddings.
+
+        Returns:
+            Prober: Trained Prober model.
         """
-        repr_dim = self.model.repr_dim
+        # Determine the representation dimension from the model's encoder
+        repr_dim = self.model.encoder[-2].out_features  # Assuming the last Linear layer in encoder
         dataset = self.ds
         model = self.model
 
@@ -72,53 +88,41 @@ class ProbingEvaluator:
 
         step = 0
 
-        batch_size = dataset.batch_size if hasattr(dataset, 'batch_size') else 64
-        batch_steps = None
-
         for epoch in tqdm(range(epochs), desc=f"Probe prediction epochs"):
             epoch_losses = []
             for batch in tqdm(dataset, desc="Probe prediction step"):
                 ################################################################################
                 # Forward pass through your JEPA model
-                init_states = batch.states[:, 0:1]  # [B, 1, C, H, W]
-                pred_encs = model(states=init_states, actions=batch.actions)  # [B, T, D]
-                pred_encs = pred_encs.transpose(0, 1)  # [T, B, D]
+                states, actions, locations = batch  # Unpack the batch
+                init_states = states[:, 0:1].to(self.device)  # [B, 1, C, H, W]
+                actions = actions.to(self.device)  # [B, T, A]
+                pred_encs = model(states=init_states, actions=actions)  # [B, T, D]
                 ################################################################################
 
                 pred_encs = pred_encs.detach()
 
-                n_steps = pred_encs.shape[0]
-                bs = pred_encs.shape[1]
+                n_steps = pred_encs.shape[1]
+                bs = pred_encs.shape[0]
 
                 losses_list = []
 
-                target = getattr(batch, "locations").cuda()
+                target = locations.to(self.device)  # [B, T, 2]
                 target = self.normalizer.normalize_location(target)
 
                 if (
                     config.sample_timesteps is not None
                     and config.sample_timesteps < n_steps
                 ):
-                    sample_shape = (config.sample_timesteps,) + pred_encs.shape[1:]
-                    # We randomly sample n timesteps to train prober to avoid OOM
-                    sampled_pred_encs = torch.empty(
-                        sample_shape,
-                        dtype=pred_encs.dtype,
-                        device=pred_encs.device,
-                    )
-
-                    sampled_target_locs = torch.empty(bs, config.sample_timesteps, 2).to(self.device)
-
-                    for i in range(bs):
-                        indices = torch.randperm(n_steps)[: config.sample_timesteps]
-                        sampled_pred_encs[:, i, :] = pred_encs[indices, i, :]
-                        sampled_target_locs[i, :] = target[i, indices]
+                    # Randomly sample timesteps to avoid OOM
+                    sampled_indices = torch.randint(0, n_steps, (bs, config.sample_timesteps)).to(self.device)
+                    sampled_pred_encs = torch.gather(pred_encs, 1, sampled_indices.unsqueeze(-1).expand(-1, -1, pred_encs.shape[-1]))
+                    sampled_target_locs = torch.gather(target, 1, sampled_indices.unsqueeze(-1).expand(-1, -1, target.shape[-1]))
 
                     pred_encs = sampled_pred_encs
                     target = sampled_target_locs
 
                 # --------------------------------------------------------------------
-                # Modified Forward Pass to align pred_locs with target
+                # Forward Pass through Prober
                 # --------------------------------------------------------------------
                 prober.train()  # Ensure prober is in training mode
                 pred_locs = prober(pred_encs)  # [B, T, 2]
@@ -177,6 +181,12 @@ class ProbingEvaluator:
     ) -> dict:
         """
         Evaluates the Prober on all validation datasets.
+
+        Args:
+            prober (Prober): Trained Prober model.
+
+        Returns:
+            dict: Dictionary containing average losses for each dataset.
         """
         avg_losses = {}
 
@@ -193,6 +203,14 @@ class ProbingEvaluator:
     def evaluate_pred_prober(self, prober: Prober, val_ds: DataLoader, prefix: str = "") -> float:
         """
         Evaluates the Prober on a single validation dataset.
+
+        Args:
+            prober (Prober): Trained Prober model.
+            val_ds (DataLoader): DataLoader for the validation dataset.
+            prefix (str): Prefix name for logging and saving plots.
+
+        Returns:
+            float: Average evaluation loss for the dataset.
         """
         probing_losses = []
         prober.eval()  # Ensure prober is in evaluation mode
@@ -204,16 +222,17 @@ class ProbingEvaluator:
         for idx, batch in enumerate(tqdm(val_ds, desc=f"Evaluating on {prefix}")):
             ################################################################################
             # Forward pass through your JEPA model
-            init_states = batch.states[:, 0:1]  # [B, 1, C, H, W]
-            pred_encs = self.model(states=init_states, actions=batch.actions)  # [B, T, D]
-            pred_encs = pred_encs.transpose(0, 1)  # [T, B, D]
+            states, actions, locations = batch  # Unpack the batch
+            init_states = states[:, 0:1].to(self.device)  # [B, 1, C, H, W]
+            actions = actions.to(self.device)  # [B, T, A]
+            pred_encs = self.model(states=init_states, actions=actions)  # [B, T, D]
             ################################################################################
 
-            target = getattr(batch, "locations").cuda()
+            target = locations.to(self.device)  # [B, T, 2]
             target = self.normalizer.normalize_location(target)
 
             # --------------------------------------------------------------------
-            # Modified Forward Pass to align pred_locs with target
+            # Forward Pass through Prober
             # --------------------------------------------------------------------
             prober.eval()  # Ensure prober is in evaluation mode
             pred_locs = prober(pred_encs)  # [B, T, 2]
