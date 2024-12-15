@@ -10,20 +10,16 @@ from tqdm.auto import tqdm
 import numpy as np
 from matplotlib import pyplot as plt
 
-from schedulers import Scheduler, LRSchedule
-from models import Prober, build_mlp  # Removed MockModel import
-from configs import ConfigBase
+from normalizer import Normalizer
 
 from dataset import WallDataset
-from normalizer import Normalizer
 
 
 @dataclass
-class ProbingConfig(ConfigBase):
+class ProbingConfig:
     probe_targets: str = "locations"
     lr: float = 0.0002  # Tunable prober learning rate
     epochs: int = 20
-    schedule: LRSchedule = LRSchedule.Cosine
     sample_timesteps: int = 30
     prober_arch: str = "256"
 
@@ -65,7 +61,7 @@ class ProbingEvaluator:
         self.ds = probe_train_ds
         self.val_ds = probe_val_ds
 
-        self.normalizer = Normalizer(probe_train_ds)  # Updated Normalizer initialization
+        self.normalizer = Normalizer()  # Updated Normalizer initialization
 
     def train_pred_prober(self):
         """
@@ -100,16 +96,6 @@ class ProbingEvaluator:
 
         batch_size = dataset.batch_size if hasattr(dataset, 'batch_size') else 64
         batch_steps = None
-
-        scheduler = Scheduler(
-            schedule=config.schedule,
-            base_lr=config.lr,
-            data_loader=dataset,
-            epochs=epochs,
-            optimizer=optimizer_pred_prober,
-            batch_steps=batch_steps,
-            batch_size=batch_size,
-        )
 
         for epoch in tqdm(range(epochs), desc=f"Probe prediction epochs"):
             for batch in tqdm(dataset, desc="Probe prediction step"):
@@ -167,8 +153,6 @@ class ProbingEvaluator:
                 loss = sum(losses_list)
                 loss.backward()
                 optimizer_pred_prober.step()
-
-                lr = scheduler.adjust_learning_rate(step)
 
                 step += 1
 
