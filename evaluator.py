@@ -39,7 +39,7 @@ class ProbingEvaluator:
 
     def train_pred_prober(self) -> Prober:
         """
-        Probes whether the predicted embeddings capture the future locations
+        Trains the Prober to predict future locations based on embeddings.
         """
         repr_dim = self.model.repr_dim
         dataset = self.ds
@@ -65,6 +65,9 @@ class ProbingEvaluator:
         all_parameters = list(prober.parameters())
 
         optimizer_pred_prober = torch.optim.Adam(all_parameters, config.lr)
+        
+        # Implement Learning Rate Scheduler
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer_pred_prober, step_size=5, gamma=0.1)
 
         step = 0
 
@@ -72,14 +75,13 @@ class ProbingEvaluator:
         batch_steps = None
 
         for epoch in tqdm(range(epochs), desc=f"Probe prediction epochs"):
+            epoch_losses = []
             for batch in tqdm(dataset, desc="Probe prediction step"):
                 ################################################################################
                 # Forward pass through your JEPA model
                 init_states = batch.states[:, 0:1]  # [B, 1, C, H, W]
                 pred_encs = model(states=init_states, actions=batch.actions)  # [B, T, D]
                 pred_encs = pred_encs.transpose(0, 1)  # [T, B, D]
-
-                # Ensure pred_encs has shape [T, B, D]
                 ################################################################################
 
                 pred_encs = pred_encs.detach()
@@ -97,8 +99,7 @@ class ProbingEvaluator:
                     and config.sample_timesteps < n_steps
                 ):
                     sample_shape = (config.sample_timesteps,) + pred_encs.shape[1:]
-                    # we only randomly sample n timesteps to train prober.
-                    # we most likely do this to avoid OOM
+                    # We randomly sample n timesteps to train prober to avoid OOM
                     sampled_pred_encs = torch.empty(
                         sample_shape,
                         dtype=pred_encs.dtype,
@@ -115,7 +116,6 @@ class ProbingEvaluator:
                     pred_encs = sampled_pred_encs
                     target = sampled_target_locs
 
-                # TODO: Handle forward pass here
                 # --------------------------------------------------------------------
                 # Modified Forward Pass to align pred_locs with target
                 # --------------------------------------------------------------------
@@ -128,24 +128,31 @@ class ProbingEvaluator:
                 assert pred_locs.shape == target.shape, f"Shape mismatch after prober: pred_locs {pred_locs.shape}, target {target.shape}"
 
                 # --------------------------------------------------------------------
-                # Debugging: Print shapes to verify
+                # Compute loss
+                # --------------------------------------------------------------------
+                losses = self.location_losses(pred_locs, target)
+                per_probe_loss = losses.mean()
+
+                epoch_losses.append(per_probe_loss.item())
+
+                # --------------------------------------------------------------------
+                # Debugging: Print shapes and loss to verify
                 # --------------------------------------------------------------------
                 if step % 100 == 0:
                     print(f"Epoch {epoch+1}, Step {step+1}:")
                     print(f"pred_locs shape: {pred_locs.shape}")
                     print(f"target shape: {target.shape}")
-
-                # Compute loss
-                losses = self.location_losses(pred_locs, target)
-                per_probe_loss = losses.mean()
-
-                if step % 100 == 0:
                     print(f"normalized pred locations loss {per_probe_loss.item()}")
 
-                losses_list.append(per_probe_loss)
+                # --------------------------------------------------------------------
+                # Backpropagation and Optimization
+                # --------------------------------------------------------------------
                 optimizer_pred_prober.zero_grad()
-                loss = sum(losses_list)
-                loss.backward()
+                per_probe_loss.backward()
+                
+                # Implement Gradient Clipping
+                torch.nn.utils.clip_grad_norm_(prober.parameters(), max_norm=1.0)
+                
                 optimizer_pred_prober.step()
 
                 step += 1
@@ -153,6 +160,13 @@ class ProbingEvaluator:
                 if self.quick_debug and step > 2:
                     break
 
+            # Step the scheduler after each epoch
+            scheduler.step()
+
+            # Log epoch loss
+            avg_epoch_loss = sum(epoch_losses) / len(epoch_losses)
+            print(f"Epoch {epoch+1} Average Training Loss: {avg_epoch_loss}")
+        
         return prober
 
     @torch.no_grad()
@@ -161,7 +175,7 @@ class ProbingEvaluator:
         prober: Prober,
     ) -> dict:
         """
-        Evaluates on all the different validation datasets
+        Evaluates the Prober on all validation datasets.
         """
         avg_losses = {}
 
@@ -177,7 +191,7 @@ class ProbingEvaluator:
     @torch.no_grad()
     def evaluate_pred_prober(self, prober: Prober, val_ds: DataLoader, prefix: str = "") -> float:
         """
-        Evaluates the prober on a single validation dataset.
+        Evaluates the Prober on a single validation dataset.
         """
         probing_losses = []
         prober.eval()  # Ensure prober is in evaluation mode
@@ -197,7 +211,6 @@ class ProbingEvaluator:
             target = getattr(batch, "locations").cuda()
             target = self.normalizer.normalize_location(target)
 
-            # TODO: Handle forward pass here
             # --------------------------------------------------------------------
             # Modified Forward Pass to align pred_locs with target
             # --------------------------------------------------------------------
@@ -210,15 +223,17 @@ class ProbingEvaluator:
             assert pred_locs.shape == target.shape, f"Shape mismatch after prober: pred_locs {pred_locs.shape}, target {target.shape}"
 
             # --------------------------------------------------------------------
+            # Compute loss
+            # --------------------------------------------------------------------
+            losses = self.location_losses(pred_locs, target)
+            probing_losses.append(losses.cpu())
+
+            # --------------------------------------------------------------------
             # Debugging: Print shapes to verify
             # --------------------------------------------------------------------
             print(f"Evaluation - {prefix} - Batch {idx+1}:")
             print(f"pred_locs shape: {pred_locs.shape}")
             print(f"target shape: {target.shape}")
-
-            # Compute loss
-            losses = self.location_losses(pred_locs, target)
-            probing_losses.append(losses.cpu())
 
             # --------------------------------------------------------------------
             # Visualize a few samples
@@ -245,6 +260,16 @@ class ProbingEvaluator:
 
     @staticmethod
     def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Computes the Mean Squared Error (MSE) loss between predictions and targets.
+
+        Args:
+            pred (torch.Tensor): Predicted locations [B, T, 2].
+            target (torch.Tensor): Target locations [B, T, 2].
+
+        Returns:
+            torch.Tensor: Scalar tensor representing the MSE loss.
+        """
         assert pred.shape == target.shape, f"Shape mismatch: pred {pred.shape}, target {target.shape}"
         mse = (pred - target).pow(2).mean()
         return mse
