@@ -1,43 +1,14 @@
 # evaluator.py
-from typing import NamedTuple, List, Any, Optional, Dict
-from itertools import chain      
-from dataclasses import dataclass
-import itertools
-import os
+from typing import Any, List, Optional, Tuple
 import torch
-import torch.nn.functional as F
-from tqdm.auto import tqdm
-import numpy as np
-from matplotlib import pyplot as plt
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader
+from tqdm import tqdm
 
+from models import Prober  # Added import for Prober
 from normalizer import Normalizer
-
-from dataset import WallDataset
-
-
-@dataclass
-class ProbingConfig:
-    probe_targets: str = "locations"
-    lr: float = 0.0002  # Tunable prober learning rate
-    epochs: int = 20
-    sample_timesteps: int = 30
-    prober_arch: str = "256"
-
-
-class ProbeResult(NamedTuple):
-    model: torch.nn.Module
-    average_eval_loss: float
-    eval_losses_per_step: List[float]
-    plots: List[Any]
-
-
-default_config = ProbingConfig()
-
-
-def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    assert pred.shape == target.shape
-    mse = (pred - target).pow(2).mean(dim=0)
-    return mse
+from configs import ProbingConfig
 
 
 class ProbingEvaluator:
@@ -45,9 +16,9 @@ class ProbingEvaluator:
         self,
         device: str,
         model: torch.nn.Module,
-        probe_train_ds,
+        probe_train_ds: DataLoader,
         probe_val_ds: dict,
-        config: ProbingConfig = default_config,
+        config: ProbingConfig = ProbingConfig(),
         quick_debug: bool = False,
     ):
         self.device = device
@@ -63,7 +34,7 @@ class ProbingEvaluator:
 
         self.normalizer = Normalizer()  # Initialized without arguments
 
-    def train_pred_prober(self):
+    def train_pred_prober(self) -> Prober:
         """
         Probes whether the predicted embeddings capture the future locations
         """
@@ -142,7 +113,7 @@ class ProbingEvaluator:
                     target = sampled_target_locs
 
                 pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
-                losses = location_losses(pred_locs, target)
+                losses = self.location_losses(pred_locs, target)
                 per_probe_loss = losses.mean()
 
                 if step % 100 == 0:
@@ -164,8 +135,8 @@ class ProbingEvaluator:
     @torch.no_grad()
     def evaluate_all(
         self,
-        prober,
-    ):
+        prober: Prober,
+    ) -> dict:
         """
         Evaluates on all the different validation datasets
         """
@@ -181,7 +152,7 @@ class ProbingEvaluator:
         return avg_losses
 
     @torch.no_grad()
-    def evaluate_pred_prober(self, prober: torch.nn.Module, val_ds: torch.utils.data.DataLoader, prefix: str = ""):
+    def evaluate_pred_prober(self, prober: Prober, val_ds: DataLoader, prefix: str = "") -> float:
         """
         Evaluates the prober on a single validation dataset.
         """
@@ -202,7 +173,7 @@ class ProbingEvaluator:
             target = self.normalizer.normalize_location(target)
 
             pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
-            losses = location_losses(pred_locs, target)
+            losses = self.location_losses(pred_locs, target)
             probing_losses.append(losses.cpu())
 
         losses_t = torch.stack(probing_losses, dim=0).mean(dim=0)
@@ -212,3 +183,9 @@ class ProbingEvaluator:
         average_eval_loss = losses_t.mean().item()
 
         return average_eval_loss
+
+    @staticmethod
+    def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        assert pred.shape == target.shape
+        mse = (pred - target).pow(2).mean(dim=0)
+        return mse
