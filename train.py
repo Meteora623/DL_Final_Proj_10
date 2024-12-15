@@ -22,7 +22,7 @@ class TrainingConfig(ConfigBase):
     train_split: str = "probe_normal/train"  # Training data split
     val_split: str = "probe_normal/val"  # Validation data split
     batch_size: int = 64  # Batch size
-    epochs: int = 2  # Number of training epochs
+    epochs: int = 2  # Number of training epochs (set to 2 for quick debugging)
     learning_rate: float = 1e-3  # Learning rate for the optimizer
     weight_decay: float = 1e-5  # Weight decay for the optimizer
     scheduler: LRSchedule = LRSchedule.Cosine  # Learning rate scheduler type
@@ -195,8 +195,8 @@ def main():
     # Load data
     train_loader, val_loader = load_data(config)
 
-    # Initialize Normalizer (assuming no normalization needed during training as probing=False)
-    normalizer = Normalizer(data_loader=None)  # Pass None or adjust as needed
+    # Initialize Normalizer (using predefined mean and std)
+    normalizer = Normalizer(data_loader=None)  # Using predefined values
 
     # Initialize model
     model = initialize_model(config)
