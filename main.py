@@ -8,7 +8,6 @@ from normalizer import Normalizer
 from evaluator import ProbingEvaluator
 from configs import ProbingConfig
 
-
 def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     config = ProbingConfig()
     evaluator = ProbingEvaluator(
@@ -29,7 +28,6 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     # Print or log the average losses
     for prefix, loss in avg_losses.items():
         print(f"Validation Loss on {prefix}: {loss:.4f}")
-
 
 def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -72,7 +70,6 @@ def main():
 
     # Evaluate the model
     evaluate_model(device, model, probe_train_ds, probe_val_ds)
-
 
 if __name__ == "__main__":
     main()
