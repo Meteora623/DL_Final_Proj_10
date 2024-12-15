@@ -1,4 +1,5 @@
 # dataset.py
+
 from typing import NamedTuple, Optional, List
 import torch
 import numpy as np
@@ -63,13 +64,10 @@ class WallDataset(torch.utils.data.Dataset):
                 augmented_states.append(frame_aug)
             states = torch.stack(augmented_states)
 
-        states = states.to(self.device)
-        actions = actions.to(self.device)
-
         if self.locations is not None:
-            locations = torch.from_numpy(self.locations[i].copy()).float().to(self.device)
+            locations = torch.from_numpy(self.locations[i].copy()).float()
         else:
-            locations = torch.empty(0).to(self.device)
+            locations = torch.empty(0).float()
 
         return WallSample(states=states, locations=locations, actions=actions)
 
@@ -94,7 +92,7 @@ def create_wall_dataloader(
         batch_size,
         shuffle=train,
         drop_last=True,
-        pin_memory=True,  # Kept True for better performance on GPU
+        pin_memory=False,  # Set to False to avoid CUDA pin_memory error
         num_workers=0,    # Set to 0 to avoid CUDA re-initialization issues
     )
 
