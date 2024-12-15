@@ -10,6 +10,8 @@ from tqdm import tqdm
 from models import Prober  # Ensure Prober is correctly imported
 from normalizer import Normalizer
 from configs import ProbingConfig
+import matplotlib.pyplot as plt
+import os
 
 
 class ProbingEvaluator:
@@ -113,17 +115,27 @@ class ProbingEvaluator:
                     pred_encs = sampled_pred_encs
                     target = sampled_target_locs
 
-                # Transpose pred_locs to match target shape if necessary
-                # Assuming pred_encs is [T, B, D] and prober outputs [2]
-                # pred_locs after stacking: [T, B, 2]
-                pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)  # [T, B, 2]
-                pred_locs = pred_locs.transpose(0, 1)  # [B, T, 2]
+                # TODO: Handle forward pass here
+                # --------------------------------------------------------------------
+                # Modified Forward Pass to align pred_locs with target
+                # --------------------------------------------------------------------
+                prober.train()  # Ensure prober is in training mode
+                pred_locs = prober(pred_encs)  # [B, T, 2]
 
+                # --------------------------------------------------------------------
+                # Ensure pred_locs and target have the same shape
+                # --------------------------------------------------------------------
+                assert pred_locs.shape == target.shape, f"Shape mismatch after prober: pred_locs {pred_locs.shape}, target {target.shape}"
+
+                # --------------------------------------------------------------------
                 # Debugging: Print shapes to verify
-                print(f"Epoch {epoch+1}, Step {step+1}:")
-                print(f"pred_locs shape: {pred_locs.shape}")
-                print(f"target shape: {target.shape}")
+                # --------------------------------------------------------------------
+                if step % 100 == 0:
+                    print(f"Epoch {epoch+1}, Step {step+1}:")
+                    print(f"pred_locs shape: {pred_locs.shape}")
+                    print(f"target shape: {target.shape}")
 
+                # Compute loss
                 losses = self.location_losses(pred_locs, target)
                 per_probe_loss = losses.mean()
 
@@ -168,7 +180,11 @@ class ProbingEvaluator:
         Evaluates the prober on a single validation dataset.
         """
         probing_losses = []
-        prober.eval()
+        prober.eval()  # Ensure prober is in evaluation mode
+
+        # Create a directory to save sample plots
+        sample_dir = f"sample_predictions_{prefix}"
+        os.makedirs(sample_dir, exist_ok=True)
 
         for idx, batch in enumerate(tqdm(val_ds, desc=f"Evaluating on {prefix}")):
             ################################################################################
@@ -176,23 +192,48 @@ class ProbingEvaluator:
             init_states = batch.states[:, 0:1]  # [B, 1, C, H, W]
             pred_encs = self.model(states=init_states, actions=batch.actions)  # [B, T, D]
             pred_encs = pred_encs.transpose(0, 1)  # [T, B, D]
-
-            # Ensure pred_encs has shape [T, B, D]
             ################################################################################
 
             target = getattr(batch, "locations").cuda()
             target = self.normalizer.normalize_location(target)
 
-            pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)  # [T, B, 2]
-            pred_locs = pred_locs.transpose(0, 1)  # [B, T, 2]
+            # TODO: Handle forward pass here
+            # --------------------------------------------------------------------
+            # Modified Forward Pass to align pred_locs with target
+            # --------------------------------------------------------------------
+            prober.eval()  # Ensure prober is in evaluation mode
+            pred_locs = prober(pred_encs)  # [B, T, 2]
 
+            # --------------------------------------------------------------------
+            # Ensure pred_locs and target have the same shape
+            # --------------------------------------------------------------------
+            assert pred_locs.shape == target.shape, f"Shape mismatch after prober: pred_locs {pred_locs.shape}, target {target.shape}"
+
+            # --------------------------------------------------------------------
             # Debugging: Print shapes to verify
+            # --------------------------------------------------------------------
             print(f"Evaluation - {prefix} - Batch {idx+1}:")
             print(f"pred_locs shape: {pred_locs.shape}")
             print(f"target shape: {target.shape}")
 
+            # Compute loss
             losses = self.location_losses(pred_locs, target)
             probing_losses.append(losses.cpu())
+
+            # --------------------------------------------------------------------
+            # Visualize a few samples
+            # --------------------------------------------------------------------
+            if idx == 0:  # Visualize only the first batch
+                for i in range(min(5, pred_locs.shape[0])):  # Visualize up to 5 samples
+                    plt.figure(figsize=(6, 6))
+                    plt.scatter(target[i, :, 0].cpu(), target[i, :, 1].cpu(), label='Target', c='blue')
+                    plt.scatter(pred_locs[i, :, 0].cpu(), pred_locs[i, :, 1].cpu(), label='Predicted', c='red')
+                    plt.title(f"Sample {i+1} - Batch {idx+1}")
+                    plt.legend()
+                    plt.xlabel("X Coordinate")
+                    plt.ylabel("Y Coordinate")
+                    plt.savefig(os.path.join(sample_dir, f"sample_{i+1}_batch_{idx+1}.png"))
+                    plt.close()
 
         losses_t = torch.stack(probing_losses, dim=0).mean(dim=0)
         losses_t = self.normalizer.unnormalize_mse(losses_t)
@@ -205,5 +246,5 @@ class ProbingEvaluator:
     @staticmethod
     def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         assert pred.shape == target.shape, f"Shape mismatch: pred {pred.shape}, target {target.shape}"
-        mse = (pred - target).pow(2).mean(dim=0)
+        mse = (pred - target).pow(2).mean()
         return mse
