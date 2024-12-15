@@ -61,7 +61,7 @@ class ProbingEvaluator:
         self.ds = probe_train_ds
         self.val_ds = probe_val_ds
 
-        self.normalizer = Normalizer()  # Updated Normalizer initialization
+        self.normalizer = Normalizer()  # Initialized without arguments
 
     def train_pred_prober(self):
         """
