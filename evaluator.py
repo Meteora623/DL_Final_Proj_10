@@ -1,6 +1,6 @@
 # evaluator.py
 
-from typing import Any, List, Optional, Tuple
+from typing import Any, List, Optional, Tuple, Dict
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -20,7 +20,7 @@ class ProbingEvaluator:
         device: str,
         model: torch.nn.Module,
         probe_train_ds: DataLoader,
-        probe_val_ds: dict,
+        probe_val_ds: Dict[str, DataLoader],
         config: ProbingConfig = ProbingConfig(),
         quick_debug: bool = False,
     ):
@@ -64,7 +64,8 @@ class ProbingEvaluator:
 
         all_parameters = list(prober.parameters())
 
-        optimizer_pred_prober = torch.optim.Adam(all_parameters, config.lr)
+        # Change optimizer to AdamW for better weight decay handling
+        optimizer_pred_prober = torch.optim.AdamW(all_parameters, config.lr, weight_decay=1e-4)
         
         # Implement Learning Rate Scheduler
         scheduler = torch.optim.lr_scheduler.StepLR(optimizer_pred_prober, step_size=5, gamma=0.1)
