@@ -77,8 +77,7 @@ class ProbingEvaluator:
                 target = batch.locations.to(self.device, non_blocking=True)
 
                 pred_encs = model(states=init_states, actions=actions)
-                # pred_encs: [B,T,D]
-                pred_encs = pred_encs.transpose(0,1) # [T,B,D]
+                pred_encs = pred_encs.transpose(0,1)
 
                 pred_encs = pred_encs.detach()
 
@@ -99,7 +98,6 @@ class ProbingEvaluator:
                     )
                     sampled_target_locs = torch.empty(bs, config.sample_timesteps, 2, device=self.device)
 
-                    # 使用GPU上生成的随机序列
                     indices_all = torch.randperm(n_steps, device=self.device)[:config.sample_timesteps]
                     for i in range(bs):
                         sampled_pred_encs[:, i, :] = pred_encs[indices_all, i, :]
