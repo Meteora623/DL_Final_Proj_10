@@ -1,6 +1,5 @@
 import torch
 
-
 class Normalizer:
     def __init__(self):
         self.location_mean = torch.tensor([31.5863, 32.0618])
@@ -12,9 +11,7 @@ class Normalizer:
         )
 
     def unnormalize_location(self, location: torch.Tensor) -> torch.Tensor:
-        return location * self.location_std.to(location.device) + self.location_mean.to(
-            location.device
-        )
+        return location * self.location_std.to(location.device) + self.location_mean.to(location.device)
 
     def unnormalize_mse(self, mse):
         return mse * (self.location_std.to(mse.device) ** 2)
