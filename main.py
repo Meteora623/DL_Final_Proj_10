@@ -1,15 +1,12 @@
-# main.py
 from dataset import create_wall_dataloader
 from evaluator import ProbingEvaluator
 import torch
-from models import JEPAModel  # Our newly implemented model
-
+from models import JEPAModel
 
 def get_device():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print("Using device:", device)
     return device
-
 
 def load_data(device):
     data_path = "/scratch/DL24FA"
@@ -50,7 +47,6 @@ def load_data(device):
 
     return probe_train_ds, probe_val_ds
 
-
 def load_expert_data(device):
     data_path = "/scratch/DL24FA"
 
@@ -72,15 +68,11 @@ def load_expert_data(device):
 
     return probe_train_expert_ds, probe_val_expert_ds
 
-
 def load_model(device):
-    # 使用与train.py中相同的repr_dim参数
     model = JEPAModel(repr_dim=256, momentum=0.99).to(device)
-    # Load trained weights
     model.load_state_dict(torch.load("model_weights.pth", map_location=device))
     model.eval()
     return model
-
 
 def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     evaluator = ProbingEvaluator(
@@ -92,17 +84,14 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
     )
 
     prober = evaluator.train_pred_prober()
-
     avg_losses = evaluator.evaluate_all(prober=prober)
-
     for probe_attr, loss in avg_losses.items():
         print(f"{probe_attr} loss: {loss}")
-
 
 if __name__ == "__main__":
     device = get_device()
     model = load_model(device)
-    
+
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total Trainable Parameters: {total_params:,}")
 
