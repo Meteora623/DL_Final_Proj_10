@@ -1,3 +1,4 @@
+# train.py
 import torch
 from models import JEPAModel, JEPATrainer
 from dataset import create_wall_dataloader
@@ -7,12 +8,11 @@ if __name__ == "__main__":
     print("Training on device:", device)
 
     data_path = "/scratch/DL24FA/train"
-
     print("Loading training data...")
     train_loader = create_wall_dataloader(
         data_path=data_path,
         probing=False,
-        device=device,
+        device="cpu",   # 先用CPU加载数据，然后训练时转移到GPU
         batch_size=64,
         train=True,
     )
@@ -35,7 +35,6 @@ if __name__ == "__main__":
         count = 0
         print(f"Epoch {epoch+1}/{epochs} start...")
         for batch_idx, batch in enumerate(train_loader):
-            # 在这里将数据移动到 GPU
             states = batch.states.to(device, non_blocking=True)
             actions = batch.actions.to(device, non_blocking=True)
 
