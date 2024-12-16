@@ -54,10 +54,10 @@ class JEPAModel(nn.Module):
         self.momentum = momentum
 
         # 使用ViTEncoder取代CNN Encoder
-        self.online_encoder = ViTEncoder(image_size=64, patch_size=5, dim=repr_dim, depth=4, heads=4, mlp_ratio=4.0)
+        self.online_encoder = ViTEncoder(image_size=65, patch_size=5, dim=repr_dim, depth=4, heads=4, mlp_ratio=4.0)
         self.online_predictor = Predictor(repr_dim=repr_dim)
 
-        self.target_encoder = ViTEncoder(image_size=64, patch_size=5, dim=repr_dim, depth=4, heads=4, mlp_ratio=4.0)
+        self.target_encoder = ViTEncoder(image_size=65, patch_size=5, dim=repr_dim, depth=4, heads=4, mlp_ratio=4.0)
         self._update_target(1.0)
 
     @torch.no_grad()
