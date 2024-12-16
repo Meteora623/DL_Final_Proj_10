@@ -67,8 +67,7 @@ def load_expert_data(device):
     return probe_train_expert_ds, probe_val_expert_ds
 
 def load_model(device):
-    # 与train时参数一致
-    model = JEPAModel(repr_dim=128, momentum=0.99).to(device)
+    model = JEPAModel(repr_dim=64, momentum=0.99).to(device)
     model.load_state_dict(torch.load("model_weights.pth", map_location=device))
     model.eval()
     return model
