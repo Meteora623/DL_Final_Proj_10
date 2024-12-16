@@ -17,7 +17,8 @@ class ViTEncoder(nn.Module):
         self.cls_token = nn.Parameter(torch.randn(1, 1, dim))
         self.pos_embed = nn.Parameter(torch.randn(1, num_patches+1, dim))
 
-        encoder_layer = nn.TransformerEncoderLayer(dim, heads, dim * mlp_ratio, dropout=0.0, batch_first=True)
+        encoder_layer = nn.TransformerEncoderLayer(dim, heads, int(dim * mlp_ratio), dropout=0.0, batch_first=True)
+
         self.transformer = nn.TransformerEncoder(encoder_layer, depth)
 
         self.norm = nn.LayerNorm(dim)
