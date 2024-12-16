@@ -1,4 +1,3 @@
-# train.py
 import torch
 from models import JEPAModel, JEPATrainer
 from dataset import create_wall_dataloader
@@ -12,12 +11,11 @@ if __name__ == "__main__":
     train_loader = create_wall_dataloader(
         data_path=data_path,
         probing=False,
-        device="cpu",   # 先用CPU加载数据，然后训练时转移到GPU
+        device="cpu",
         batch_size=512,
         train=True,
     )
     print("Data loader created, total batches:", len(train_loader))
-
     ds = train_loader.dataset
     print("Dataset length:", len(ds))
 
