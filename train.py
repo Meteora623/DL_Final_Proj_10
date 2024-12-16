@@ -12,7 +12,7 @@ if __name__ == "__main__":
         data_path=data_path,
         probing=False,
         device="cpu",
-        batch_size=512,
+        batch_size=128,
         train=True,
     )
     print("Data loader created, total batches:", len(train_loader))
