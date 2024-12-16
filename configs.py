@@ -2,13 +2,10 @@ import argparse
 import dataclasses
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Iterable, Tuple, Union, cast, List
-
+from typing import Any
 from omegaconf import OmegaConf
 
 DataClass = Any
-DataClassType = Any
-
 
 @dataclass
 class ConfigBase:
