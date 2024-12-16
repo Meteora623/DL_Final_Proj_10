@@ -30,7 +30,6 @@ class WallDataset:
 
         # 数据增强：随机裁剪和水平翻转
         self.transform = transforms.Compose([
-            transforms.ToPILImage(),
             transforms.RandomResizedCrop(size=65, scale=(0.8,1.0)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
