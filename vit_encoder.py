@@ -1,3 +1,7 @@
+import torch
+from torch import nn
+from einops import rearrange
+
 class ViTEncoder(nn.Module):
     def __init__(self, image_size=65, patch_size=5, dim=256, depth=4, heads=4, mlp_ratio=4):
         super().__init__()
@@ -18,11 +22,9 @@ class ViTEncoder(nn.Module):
         self.norm = nn.LayerNorm(dim)
 
     def forward(self, x):
-        # x: [B, C, H, W], H=W=65, patch_size=5可整除65
         B, C, H, W = x.shape
         p = self.patch_size
         patches = rearrange(x, 'b c (h p) (w q) -> b (h w) (c p q)', p=p, q=p)
-        # patches: [B, num_patches, patch_dim]
         x = self.patch_to_embed(patches)
         cls_token = self.cls_token.expand(B, -1, -1)
         x = torch.cat((cls_token, x), dim=1)
