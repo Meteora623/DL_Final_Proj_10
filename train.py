@@ -27,7 +27,7 @@ if __name__ == "__main__":
     trainer = JEPATrainer(model, device=device, lr=1e-3, momentum=0.99, vicreg_lambda=0.01, vicreg_mu=0.01)
     print("Trainer created.")
 
-    epochs = 5
+    epochs = 2
     print("Start training loop...")
     for epoch in range(epochs):
         total_loss = 0.0
