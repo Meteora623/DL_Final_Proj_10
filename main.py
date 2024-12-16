@@ -82,7 +82,6 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
         probe_val_ds=probe_val_ds,
         quick_debug=False,
     )
-
     prober = evaluator.train_pred_prober()
     avg_losses = evaluator.evaluate_all(prober=prober)
     for probe_attr, loss in avg_losses.items():
