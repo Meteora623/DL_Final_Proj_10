@@ -39,14 +39,12 @@ class WallDataset:
         return self.states.shape[0]
 
     def __getitem__(self, i):
-        # states: [T, C, H, W]
         states = self.states[i]
         states_copy = states.copy()
         states_tensor = torch.from_numpy(states_copy).float()
 
-        # 对每帧进行数据增强
         for t in range(states_tensor.shape[0]):
-            frame = states_tensor[t]  # [C, H, W]
+            frame = states_tensor[t]
             frame_img = F.to_pil_image(frame)
             frame_aug = self.transform(frame_img)
             states_tensor[t] = frame_aug
@@ -64,5 +62,5 @@ class WallDataset:
 
 def create_wall_dataloader(data_path, probing=False, device="cuda", batch_size=64, train=True):
     ds = WallDataset(data_path=data_path, probing=probing, device=device)
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=train, drop_last=True, pin_memory=True, num_workers=4)
+    loader = DataLoader(ds, batch_size=batch_size, shuffle=train, drop_last=True, pin_memory=True, num_workers=2)
     return loader
