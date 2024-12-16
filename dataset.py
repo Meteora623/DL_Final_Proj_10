@@ -38,25 +38,26 @@ class WallDataset:
     def __len__(self):
         return self.states.shape[0]
 
-    def __getitem__(self, i):
-        states = self.states[i]  # np array [T, C, H, W]
-        # 转换为tensor后对每帧进行增广
-        # states shape: (T, 2, 65, 65)
-        states_tensor = torch.empty_like(torch.from_numpy(states), dtype=torch.float)
-        for t in range(states.shape[0]):
-            frame = torch.from_numpy(states[t]).float() # [2, 65, 65]
-            # 转换到PIL后需要C,H,W->H,W,C
-            frame_img = transforms.functional.to_pil_image(frame)
-            frame_aug = self.transform(frame_img) # [C,H,W]
-            states_tensor[t] = frame_aug
+   def __getitem__(self, i):
+    states = self.states[i]  # 原始为只读的mmap数组
+    states_copy = states.copy()  # 创建可写副本
+    states_tensor = torch.from_numpy(states_copy).float()  # [T, C, H, W]
 
-        actions = torch.from_numpy(self.actions[i]).float()
-        if self.locations is not None:
-            locations = torch.from_numpy(self.locations[i]).float()
-        else:
-            locations = torch.empty(0)
+    # 对每帧进行数据增强
+    for t in range(states_tensor.shape[0]):
+        frame = states_tensor[t]  # [C, H, W]
+        frame_img = transforms.functional.to_pil_image(frame)
+        frame_aug = self.transform(frame_img)  # 数据增强
+        states_tensor[t] = frame_aug
 
-        return WallSample(states=states_tensor, locations=locations, actions=actions)
+    actions = torch.from_numpy(self.actions[i]).float()
+    if self.locations is not None:
+        locations = torch.from_numpy(self.locations[i]).float()
+    else:
+        locations = torch.empty(0)
+
+    return WallSample(states=states_tensor, locations=locations, actions=actions)
+
 
 def create_wall_dataloader(data_path, probing=False, device="cuda", batch_size=64, train=True):
     ds = WallDataset(data_path=data_path, probing=probing, device=device)
