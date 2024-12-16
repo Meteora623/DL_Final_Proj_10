@@ -10,6 +10,7 @@ def get_device():
 
 def load_data(device):
     data_path = "/scratch/DL24FA"
+
     probe_train_ds = create_wall_dataloader(
         data_path=f"{data_path}/probe_normal/train",
         probing=True,
@@ -48,6 +49,7 @@ def load_data(device):
 
 def load_expert_data(device):
     data_path = "/scratch/DL24FA"
+
     probe_train_expert_ds = create_wall_dataloader(
         data_path=f"{data_path}/probe_expert/train",
         probing=True,
@@ -67,7 +69,7 @@ def load_expert_data(device):
     return probe_train_expert_ds, probe_val_expert_ds
 
 def load_model(device):
-    model = JEPAModel(repr_dim=64, momentum=0.99).to(device)
+    model = JEPAModel(repr_dim=256, momentum=0.99).to(device)
     model.load_state_dict(torch.load("model_weights.pth", map_location=device))
     model.eval()
     return model
@@ -88,6 +90,7 @@ def evaluate_model(device, model, probe_train_ds, probe_val_ds):
 if __name__ == "__main__":
     device = get_device()
     model = load_model(device)
+
     total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total Trainable Parameters: {total_params:,}")
 
