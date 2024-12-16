@@ -35,7 +35,6 @@ class WallDataset:
         return self.states.shape[0]
 
     def __getitem__(self, i):
-        # 使用 np.array(...) 转换内存映射数据为真正的numpy数组
         states = torch.from_numpy(np.array(self.states[i])).float()
         actions = torch.from_numpy(np.array(self.actions[i])).float()
         if self.locations is not None:
