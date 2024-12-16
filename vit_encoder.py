@@ -3,7 +3,7 @@ from torch import nn
 from einops import rearrange
 
 class ViTEncoder(nn.Module):
-    def __init__(self, image_size=65, patch_size=5, dim=256, depth=4, heads=4, mlp_ratio=4):
+    def __init__(self, image_size=65, patch_size=5, dim=128, depth=2, heads=2, mlp_ratio=4):
         super().__init__()
         assert image_size % patch_size == 0, "Image must be divisible by patch size"
         num_patches = (image_size // patch_size) ** 2
@@ -22,10 +22,8 @@ class ViTEncoder(nn.Module):
         self.norm = nn.LayerNorm(dim)
 
     def forward(self, x):
-        # x: [B, C, 65, 65]
         B, C, H, W = x.shape
-        p = self.patch_size  # now p=5
-        # 将(H, W)分成(H/p, W/p)个patch，每个patch大小为5x5
+        p = self.patch_size
         patches = rearrange(x, 'b c (h p) (w q) -> b (h w) (c p q)', p=p, q=p)
         x = self.patch_to_embed(patches)
         cls_token = self.cls_token.expand(B, -1, -1)
@@ -35,4 +33,3 @@ class ViTEncoder(nn.Module):
         x = self.norm(x[:, 0])
         x = x / (x.norm(dim=-1, keepdim=True) + 1e-6)
         return x
-
