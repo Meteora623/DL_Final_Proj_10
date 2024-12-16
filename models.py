@@ -4,7 +4,6 @@ from torch import nn
 from torch.nn import functional as F
 import torch
 import torch.optim as optim
-import copy
 
 def build_mlp(layers_dims: List[int]):
     layers = []
@@ -43,9 +42,9 @@ class Prober(torch.nn.Module):
 
 
 class Encoder(nn.Module):
-    def __init__(self, repr_dim=128):
+    def __init__(self, repr_dim=256):
         super().__init__()
-        # 减少通道数
+        # 原 repr_dim=128 已修改为256以匹配train.py和main.py
         self.repr_dim = repr_dim
         self.net = nn.Sequential(
             nn.Conv2d(2, 16, 4, 2, 1),
@@ -66,7 +65,7 @@ class Encoder(nn.Module):
 
 
 class Predictor(nn.Module):
-    def __init__(self, repr_dim=128, action_dim=2):
+    def __init__(self, repr_dim=256, action_dim=2):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(repr_dim + action_dim, repr_dim),
@@ -80,7 +79,7 @@ class Predictor(nn.Module):
 
 
 class JEPAModel(nn.Module):
-    def __init__(self, repr_dim=128, momentum=0.99):
+    def __init__(self, repr_dim=256, momentum=0.99):
         super().__init__()
         self.repr_dim = repr_dim
         self.momentum = momentum
@@ -88,9 +87,8 @@ class JEPAModel(nn.Module):
         self.online_encoder = Encoder(repr_dim=repr_dim)
         self.online_predictor = Predictor(repr_dim=repr_dim)
 
-        # target encoder
         self.target_encoder = Encoder(repr_dim=repr_dim)
-        self._update_target(1.0)  # initialize target params = online params
+        self._update_target(1.0)
 
     @torch.no_grad()
     def _update_target(self, beta=None):
@@ -107,11 +105,6 @@ class JEPAModel(nn.Module):
         return self.target_encoder(obs)
 
     def forward(self, states, actions):
-        """
-        states: [B, 1, C, H, W]
-        actions: [B, T-1, 2]
-        output: [B, T, D]
-        """
         B, Tm1, _ = actions.shape
         T = Tm1 + 1
         s0 = self.encode_online(states[:,0])
@@ -132,10 +125,6 @@ class JEPATrainer:
         self.momentum = momentum
 
     def train_step(self, states, actions):
-        """
-        states: [B, T, C, H, W]
-        actions: [B, T-1, 2]
-        """
         self.model.train()
         B, T, C, H, W = states.shape
         with torch.no_grad():
@@ -144,10 +133,9 @@ class JEPATrainer:
                 obs_t = states[:, t]
                 t_enc = self.model.encode_target(obs_t)
                 target_embs.append(t_enc)
-            target_embs = torch.stack(target_embs, dim=1)  # [B, T, D]
+            target_embs = torch.stack(target_embs, dim=1)
 
-        pred_encs = self.model(states=states[:,0:1], actions=actions) # [B, T, D]
-
+        pred_encs = self.model(states=states[:,0:1], actions=actions)
         loss = F.mse_loss(pred_encs, target_embs)
 
         self.optimizer.zero_grad()
