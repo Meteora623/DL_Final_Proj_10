@@ -4,7 +4,7 @@ from torch import nn
 from torch.nn import functional as F
 import torch
 import torch.optim as optim
-from vit_encoder import ViTEncoder  # 新增导入
+from vit_encoder import ViTEncoder
 
 def build_mlp(layers_dims: List[int]):
     layers = []
@@ -19,7 +19,6 @@ class Prober(nn.Module):
     def __init__(self, embedding: int, arch: str, output_shape: List[int]):
         super().__init__()
         self.output_dim = np.prod(output_shape)
-        self.output_shape = output_shape
         arch_list = list(map(int, arch.split("-"))) if arch != "" else []
         f = [embedding] + arch_list + [self.output_dim]
         layers = []
@@ -32,9 +31,8 @@ class Prober(nn.Module):
     def forward(self, e):
         return self.prober(e)
 
-
 class Predictor(nn.Module):
-    def __init__(self, repr_dim=256, action_dim=2):
+    def __init__(self, repr_dim=128, action_dim=2):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(repr_dim + action_dim, repr_dim),
@@ -46,18 +44,16 @@ class Predictor(nn.Module):
         x = torch.cat([s, a], dim=-1)
         return self.net(x)
 
-
 class JEPAModel(nn.Module):
-    def __init__(self, repr_dim=256, momentum=0.99):
+    def __init__(self, repr_dim=128, momentum=0.99):
         super().__init__()
         self.repr_dim = repr_dim
         self.momentum = momentum
 
-        # 使用ViTEncoder取代CNN Encoder
-        self.online_encoder = ViTEncoder(image_size=65, patch_size=5, dim=repr_dim, depth=4, heads=4, mlp_ratio=4.0)
+        self.online_encoder = ViTEncoder(image_size=65, patch_size=5, dim=repr_dim, depth=2, heads=2, mlp_ratio=4)
         self.online_predictor = Predictor(repr_dim=repr_dim)
 
-        self.target_encoder = ViTEncoder(image_size=65, patch_size=5, dim=repr_dim, depth=4, heads=4, mlp_ratio=4.0)
+        self.target_encoder = ViTEncoder(image_size=65, patch_size=5, dim=repr_dim, depth=2, heads=2, mlp_ratio=4)
         self._update_target(1.0)
 
     @torch.no_grad()
@@ -75,7 +71,6 @@ class JEPAModel(nn.Module):
         return self.target_encoder(obs)
 
     def forward(self, states, actions):
-        # states: [B, 1, C, H, W]
         B, Tm1, _ = actions.shape
         T = Tm1 + 1
         s0 = self.encode_online(states[:,0])
@@ -84,15 +79,13 @@ class JEPAModel(nn.Module):
         for t in range(T-1):
             a_t = actions[:, t]
             s = self.online_predictor(s, a_t)
-            # 对预测结果也可以加归一化
             s = s / (s.norm(dim=-1, keepdim=True) + 1e-6)
             preds.append(s)
         return torch.stack(preds, dim=1)
 
-
 class JEPATrainer:
-    def __init__(self, model, device="cuda", lr=1e-3, momentum=0.99,
-                 vicreg_lambda=0.01, vicreg_mu=0.01):
+    def __init__(self, model, device="cuda", lr=1e-4, momentum=0.99,
+                 vicreg_lambda=0.05, vicreg_mu=0.05):
         self.model = model
         self.device = device
         self.optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -121,9 +114,9 @@ class JEPATrainer:
                 obs_t = states[:, t]
                 t_enc = self.model.encode_target(obs_t)
                 target_embs.append(t_enc)
-            target_embs = torch.stack(target_embs, dim=1)  # [B,T,D]
+            target_embs = torch.stack(target_embs, dim=1)
 
-        pred_encs = self.model(states=states[:,0:1], actions=actions) # [B,T,D]
+        pred_encs = self.model(states=states[:,0:1], actions=actions)
         mse_loss = F.mse_loss(pred_encs, target_embs)
 
         var_loss, cov_loss = self.vicreg_loss(pred_encs)
