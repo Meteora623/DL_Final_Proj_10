@@ -12,7 +12,7 @@ if __name__ == "__main__":
         data_path=data_path,
         probing=False,
         device="cpu",
-        batch_size=128,
+        batch_size=256,  # 尝试更大的batch也行
         train=True,
     )
     print("Data loader created, total batches:", len(train_loader))
@@ -20,14 +20,14 @@ if __name__ == "__main__":
     print("Dataset length:", len(ds))
 
     print("Creating model...")
-    model = JEPAModel(repr_dim=256, momentum=0.99).to(device)
+    model = JEPAModel(repr_dim=128, momentum=0.99).to(device)
     print("Model created.")
 
-    # 加上VICReg正则项
-    trainer = JEPATrainer(model, device=device, lr=1e-3, momentum=0.99, vicreg_lambda=0.01, vicreg_mu=0.01)
+    # 使用降低的lr和更高的正则
+    trainer = JEPATrainer(model, device=device, lr=1e-4, momentum=0.99, vicreg_lambda=0.05, vicreg_mu=0.05)
     print("Trainer created.")
 
-    epochs = 1
+    epochs = 5  # 尝试更多epoch
     print("Start training loop...")
     for epoch in range(epochs):
         total_loss = 0.0
