@@ -23,7 +23,8 @@ if __name__ == "__main__":
     model = JEPAModel(repr_dim=256, momentum=0.99).to(device)
     print("Model created.")
 
-    trainer = JEPATrainer(model, device=device, lr=1e-3, momentum=0.99)
+    # 加上VICReg正则项
+    trainer = JEPATrainer(model, device=device, lr=1e-3, momentum=0.99, vicreg_lambda=0.01, vicreg_mu=0.01)
     print("Trainer created.")
 
     epochs = 2
