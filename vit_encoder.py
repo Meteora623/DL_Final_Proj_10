@@ -22,8 +22,10 @@ class ViTEncoder(nn.Module):
         self.norm = nn.LayerNorm(dim)
 
     def forward(self, x):
+        # x: [B, C, 65, 65]
         B, C, H, W = x.shape
-        p = self.patch_size
+        p = self.patch_size  # now p=5
+        # 将(H, W)分成(H/p, W/p)个patch，每个patch大小为5x5
         patches = rearrange(x, 'b c (h p) (w q) -> b (h w) (c p q)', p=p, q=p)
         x = self.patch_to_embed(patches)
         cls_token = self.cls_token.expand(B, -1, -1)
@@ -33,3 +35,4 @@ class ViTEncoder(nn.Module):
         x = self.norm(x[:, 0])
         x = x / (x.norm(dim=-1, keepdim=True) + 1e-6)
         return x
+
