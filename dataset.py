@@ -35,7 +35,7 @@ class WallDataset:
         return self.states.shape[0]
 
     def __getitem__(self, i):
-        # 使用 np.array(...) 将某一行的数据读取成一个副本，在需要时再转为tensor
+        # 使用 np.array(...) 转换内存映射数据为真正的numpy数组
         states = torch.from_numpy(np.array(self.states[i])).float()
         actions = torch.from_numpy(np.array(self.actions[i])).float()
         if self.locations is not None:
@@ -58,14 +58,13 @@ def create_wall_dataloader(
         device=device,
     )
 
-    # 尝试减少num_workers=0，避免多进程开销
     loader = torch.utils.data.DataLoader(
         ds,
         batch_size=batch_size,
         shuffle=train,
         drop_last=True,
         pin_memory=True,
-        num_workers=4,  # 若环境允许可尝试提高此值，但首先尝试为0
+        num_workers=0,
     )
 
     return loader
