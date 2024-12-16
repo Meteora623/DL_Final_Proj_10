@@ -3,10 +3,10 @@ from torch import nn
 from einops import rearrange
 
 class ViTEncoder(nn.Module):
-    def __init__(self, image_size=65, patch_size=5, dim=128, depth=2, heads=2, mlp_ratio=4):
+    def __init__(self, image_size=65, patch_size=13, dim=64, depth=2, heads=2, mlp_ratio=4):
         super().__init__()
         assert image_size % patch_size == 0, "Image must be divisible by patch size"
-        num_patches = (image_size // patch_size) ** 2
+        num_patches = (image_size // patch_size) ** 2  # (65/13=5, 5*5=25 patches)
         patch_dim = 2 * patch_size * patch_size  # channels=2
 
         self.patch_size = patch_size
@@ -24,6 +24,7 @@ class ViTEncoder(nn.Module):
     def forward(self, x):
         B, C, H, W = x.shape
         p = self.patch_size
+        # fewer patches, faster
         patches = rearrange(x, 'b c (h p) (w q) -> b (h w) (c p q)', p=p, q=p)
         x = self.patch_to_embed(patches)
         cls_token = self.cls_token.expand(B, -1, -1)
