@@ -12,10 +12,10 @@ from schedulers import Scheduler, LRSchedule
 @dataclass
 class ProbingConfig(ConfigBase):
     probe_targets: str = "locations"
-    lr: float = 0.0002
+    lr: float = 0.001
     epochs: int = 20
     schedule: LRSchedule = LRSchedule.Cosine
-    sample_timesteps: int = 30
+    sample_timesteps: int = 10
     prober_arch: str = "256"
 
 def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
