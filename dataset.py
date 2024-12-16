@@ -29,10 +29,8 @@ class WallDataset:
 
         self.device = device
 
-        # 数据增强：随机裁剪和水平翻转
-        # 注：不再包含ToPILImage，因为我们手动将frame转为PIL
         self.transform = transforms.Compose([
-            transforms.RandomResizedCrop(size=65, scale=(0.8, 1.0)),
+            transforms.RandomResizedCrop(size=65, scale=(0.8,1.0)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
         ])
@@ -41,21 +39,18 @@ class WallDataset:
         return self.states.shape[0]
 
     def __getitem__(self, i):
-        # states: [T, C, H, W]的只读mmap数组
-        states = self.states[i] 
-        # 创建可写副本
-        states_copy = states.copy()  
-        states_tensor = torch.from_numpy(states_copy).float()  # [T, C, H, W]
+        # states: [T, C, H, W]
+        states = self.states[i]
+        states_copy = states.copy()
+        states_tensor = torch.from_numpy(states_copy).float()
 
         # 对每帧进行数据增强
-        # 先将每帧转为PIL图，再通过transform增强
         for t in range(states_tensor.shape[0]):
             frame = states_tensor[t]  # [C, H, W]
-            frame_img = F.to_pil_image(frame)  # 转为PIL图像
-            frame_aug = self.transform(frame_img)  # 数据增强
+            frame_img = F.to_pil_image(frame)
+            frame_aug = self.transform(frame_img)
             states_tensor[t] = frame_aug
 
-        # 同理对 actions 和 locations 执行 copy 
         actions_copy = self.actions[i].copy()
         actions = torch.from_numpy(actions_copy).float()
 
