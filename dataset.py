@@ -38,7 +38,7 @@ class WallDataset:
     def __len__(self):
         return self.states.shape[0]
 
-   def __getitem__(self, i):
+    def __getitem__(self, i):
         states = self.states[i]  # 原始为只读的mmap数组
         states_copy = states.copy()  # 创建可写副本
         states_tensor = torch.from_numpy(states_copy).float()  # [T, C, H, W]
