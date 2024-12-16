@@ -1,3 +1,4 @@
+# main.py
 from dataset import create_wall_dataloader
 from evaluator import ProbingEvaluator
 import torch
@@ -73,7 +74,8 @@ def load_expert_data(device):
 
 
 def load_model(device):
-    model = JEPAModel().to(device)
+    # 使用与train.py中相同的repr_dim参数
+    model = JEPAModel(repr_dim=256, momentum=0.99).to(device)
     # Load trained weights
     model.load_state_dict(torch.load("model_weights.pth", map_location=device))
     model.eval()
