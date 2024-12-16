@@ -32,7 +32,7 @@ class Prober(nn.Module):
         return self.prober(e)
 
 class Predictor(nn.Module):
-    def __init__(self, repr_dim=128, action_dim=2):
+    def __init__(self, repr_dim=64, action_dim=2):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(repr_dim + action_dim, repr_dim),
@@ -45,15 +45,15 @@ class Predictor(nn.Module):
         return self.net(x)
 
 class JEPAModel(nn.Module):
-    def __init__(self, repr_dim=128, momentum=0.99):
+    def __init__(self, repr_dim=64, momentum=0.99):
         super().__init__()
         self.repr_dim = repr_dim
         self.momentum = momentum
 
-        self.online_encoder = ViTEncoder(image_size=65, patch_size=5, dim=repr_dim, depth=2, heads=2, mlp_ratio=4)
+        self.online_encoder = ViTEncoder(image_size=65, patch_size=13, dim=repr_dim, depth=2, heads=2, mlp_ratio=4)
         self.online_predictor = Predictor(repr_dim=repr_dim)
 
-        self.target_encoder = ViTEncoder(image_size=65, patch_size=5, dim=repr_dim, depth=2, heads=2, mlp_ratio=4)
+        self.target_encoder = ViTEncoder(image_size=65, patch_size=13, dim=repr_dim, depth=2, heads=2, mlp_ratio=4)
         self._update_target(1.0)
 
     @torch.no_grad()
@@ -85,7 +85,7 @@ class JEPAModel(nn.Module):
 
 class JEPATrainer:
     def __init__(self, model, device="cuda", lr=1e-4, momentum=0.99,
-                 vicreg_lambda=0.05, vicreg_mu=0.05):
+                 vicreg_lambda=0.1, vicreg_mu=0.1):
         self.model = model
         self.device = device
         self.optimizer = optim.Adam(model.parameters(), lr=lr)
@@ -109,11 +109,7 @@ class JEPATrainer:
         self.model.train()
         B, T, C, H, W = states.shape
         with torch.no_grad():
-            target_embs = []
-            for t in range(T):
-                obs_t = states[:, t]
-                t_enc = self.model.encode_target(obs_t)
-                target_embs.append(t_enc)
+            target_embs = [self.model.encode_target(states[:, t]) for t in range(T)]
             target_embs = torch.stack(target_embs, dim=1)
 
         pred_encs = self.model(states=states[:,0:1], actions=actions)
