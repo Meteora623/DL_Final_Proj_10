@@ -9,10 +9,6 @@ DataClass = Any
 
 @dataclass
 class ConfigBase:
-    """Base class that should handle parsing from command line,
-    json, dicts.
-    """
-
     @classmethod
     def parse_from_command_line(cls):
         return omegaconf_parse(cls)
