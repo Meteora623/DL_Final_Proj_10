@@ -15,7 +15,7 @@ class ProbingConfig(ConfigBase):
     lr: float = 0.0002
     epochs: int = 20
     schedule: LRSchedule = LRSchedule.Cosine
-    sample_timesteps: int = 10  # 减少为10，加快评估
+    sample_timesteps: int = 30
     prober_arch: str = "256"
 
 def location_losses(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
@@ -78,6 +78,7 @@ class ProbingEvaluator:
 
                 pred_encs = model(states=init_states, actions=actions)
                 pred_encs = pred_encs.transpose(0,1)
+
                 pred_encs = pred_encs.detach()
 
                 n_steps = pred_encs.shape[0]
@@ -142,6 +143,7 @@ class ProbingEvaluator:
 
             pred_encs = model(states=init_states, actions=actions)
             pred_encs = pred_encs.transpose(0, 1)
+
             target = self.normalizer.normalize_location(target)
 
             pred_locs = torch.stack([prober(x) for x in pred_encs], dim=1)
