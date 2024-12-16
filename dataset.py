@@ -43,20 +43,20 @@ class WallDataset:
         states_copy = states.copy()  # 创建可写副本
         states_tensor = torch.from_numpy(states_copy).float()  # [T, C, H, W]
 
-    # 对每帧进行数据增强
-    for t in range(states_tensor.shape[0]):
-        frame = states_tensor[t]  # [C, H, W]
-        frame_img = transforms.functional.to_pil_image(frame)
-        frame_aug = self.transform(frame_img)  # 数据增强
-        states_tensor[t] = frame_aug
+        # 对每帧进行数据增强
+        for t in range(states_tensor.shape[0]):
+            frame = states_tensor[t]  # [C, H, W]
+            frame_img = transforms.functional.to_pil_image(frame)
+            frame_aug = self.transform(frame_img)  # 数据增强
+            states_tensor[t] = frame_aug
 
-    actions = torch.from_numpy(self.actions[i]).float()
-    if self.locations is not None:
-        locations = torch.from_numpy(self.locations[i]).float()
-    else:
-        locations = torch.empty(0)
+        actions = torch.from_numpy(self.actions[i]).float()
+        if self.locations is not None:
+            locations = torch.from_numpy(self.locations[i]).float()
+        else:
+            locations = torch.empty(0)
 
-    return WallSample(states=states_tensor, locations=locations, actions=actions)
+        return WallSample(states=states_tensor, locations=locations, actions=actions)
 
 
 def create_wall_dataloader(data_path, probing=False, device="cuda", batch_size=64, train=True):
