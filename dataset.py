@@ -65,7 +65,7 @@ def create_wall_dataloader(
         shuffle=train,
         drop_last=True,
         pin_memory=True,
-        num_workers=0,  # 若环境允许可尝试提高此值，但首先尝试为0
+        num_workers=4,  # 若环境允许可尝试提高此值，但首先尝试为0
     )
 
     return loader
