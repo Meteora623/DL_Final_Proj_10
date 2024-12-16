@@ -13,7 +13,7 @@ if __name__ == "__main__":
         data_path=data_path,
         probing=False,
         device="cpu",   # 先用CPU加载数据，然后训练时转移到GPU
-        batch_size=64,
+        batch_size=256,
         train=True,
     )
     print("Data loader created, total batches:", len(train_loader))
