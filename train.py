@@ -20,15 +20,13 @@ if __name__ == "__main__":
     print("Dataset length:", len(ds))
 
     print("Creating model...")
-    # repr_dim=128，与models.py中保持一致
-    model = JEPAModel(repr_dim=128, momentum=0.99).to(device)
+    model = JEPAModel(repr_dim=64, momentum=0.99).to(device)
     print("Model created.")
 
-    # 使用降低的lr和更高的正则
-    trainer = JEPATrainer(model, device=device, lr=1e-4, momentum=0.99, vicreg_lambda=0.05, vicreg_mu=0.05)
+    trainer = JEPATrainer(model, device=device, lr=1e-4, momentum=0.99, vicreg_lambda=0.1, vicreg_mu=0.1)
     print("Trainer created.")
 
-    epochs = 1  # 可以根据需要增加
+    epochs = 1
     print("Start training loop...")
     for epoch in range(epochs):
         total_loss = 0.0
